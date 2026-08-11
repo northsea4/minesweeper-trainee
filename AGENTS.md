@@ -13,3 +13,5 @@
 ### Domain docs
 
 采用 single-context 领域文档布局。详见 `docs/agents/domain.md`。
+
+@RTK.md
