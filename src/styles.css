@@ -99,11 +99,28 @@ body {
 }
 
 .board {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(var(--board-cols), var(--cell-size));
   grid-template-rows: repeat(var(--board-rows), var(--cell-size));
   gap: var(--cell-gap);
   touch-action: manipulation;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.aim-marker {
+  position: absolute;
+  display: none;
+  border: 2px solid var(--accent);
+  border-radius: 5px;
+  box-shadow: 0 0 0 2px rgb(47 111 237 / 30%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.aim-marker--on {
+  display: block;
 }
 
 .cell {
