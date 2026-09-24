@@ -90,6 +90,40 @@ body {
   font-weight: 600;
 }
 
+.board-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
+}
+
+.pause-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  border-radius: 10px;
+  background: rgb(20 25 33 / 72%);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  z-index: 3;
+}
+
+.pause-mask button {
+  font-size: 15px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
 .board-host {
   display: flex;
   justify-content: center;

@@ -38,6 +38,10 @@ function fresh(): ReturnType<typeof newGameWithBoard> {
   return newGameWithBoard(CONFIG, MINE_BOARD, 7, 3);
 }
 
+function freshChallenge(): ReturnType<typeof newGameWithBoard> {
+  return newGameWithBoard(CONFIG, MINE_BOARD, 7, 3, "challenge");
+}
+
 describe("reveal", () => {
   it("becomes playable only after a certified board is started", () => {
     const ready = newGame(CONFIG, 1);
@@ -74,7 +78,7 @@ describe("reveal", () => {
   });
 
   it("loses when a mine is revealed", () => {
-    const next = reduce(fresh(), { type: "reveal", index: 5 });
+    const next = reduce(freshChallenge(), { type: "reveal", index: 5 });
     expect(next.status).toBe("lost");
     expect(next.reviewIndex).toBe(5);
   });
@@ -146,7 +150,7 @@ describe("chord", () => {
   });
 
   it("loses when a wrong flag lets the chord open a mine", () => {
-    let state = fresh();
+    let state = freshChallenge();
     state = reduce(state, { type: "reveal", index: 3 });
     state = reduce(state, { type: "toggleFlag", index: 1 });
     state = reduce(state, { type: "chord", index: 2 });

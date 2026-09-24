@@ -8,6 +8,7 @@ import {
   type BoardKey,
   type CellMark,
   type GameAction,
+  type GameMode,
   type GameState,
   type GameStatus,
 } from "./types.ts";
@@ -16,9 +17,23 @@ function nextSeed(seed: number): number {
   return (Math.imul(seed >>> 0, 1664525) + 1013904223) >>> 0;
 }
 
-export function newGame(config: BoardConfig, seed: number): GameState {
+export function isTimerRunning(state: GameState): boolean {
+  if (state.status === "playing") return true;
+  return state.status === "paused" && state.mode === "challenge";
+}
+
+export function isPlayable(state: GameState): boolean {
+  return state.status === "ready" || state.status === "playing";
+}
+
+export function newGame(
+  config: BoardConfig,
+  seed: number,
+  mode: GameMode = "training",
+): GameState {
   return {
     config,
+    mode,
     seed,
     status: "ready",
     firstIndex: null,
@@ -27,6 +42,7 @@ export function newGame(config: BoardConfig, seed: number): GameState {
     revealedCount: 0,
     flaggedCount: 0,
     reviewIndex: null,
+    revives: 0,
   };
 }
 
@@ -35,17 +51,13 @@ export function newGameWithBoard(
   board: Board,
   seed: number,
   firstIndex: number,
+  mode: GameMode = "training",
 ): GameState {
   return {
-    config,
-    seed,
+    ...newGame(config, seed, mode),
     status: "playing",
     firstIndex,
     board,
-    marks: new Array<CellMark>(config.width * config.height).fill("hidden"),
-    revealedCount: 0,
-    flaggedCount: 0,
-    reviewIndex: null,
   };
 }
 
@@ -96,7 +108,10 @@ function applyReveal(state: GameState, index: number): GameState {
   const board = state.board;
   if (board === null) return state;
   if (board.cells[index].mine) {
-    return { ...state, status: "lost", reviewIndex: index };
+    if (state.mode === "challenge") {
+      return { ...state, status: "lost", reviewIndex: index };
+    }
+    return { ...state, reviewIndex: index, revives: state.revives + 1 };
   }
   const marks = state.marks.slice();
   const revealed = floodReveal(board, marks, index, state.config);
@@ -107,7 +122,7 @@ function applyReveal(state: GameState, index: number): GameState {
 }
 
 function reveal(state: GameState, index: number): GameState {
-  if (state.status === "won" || state.status === "lost") return state;
+  if (!isPlayable(state)) return state;
   if (index < 0 || index >= state.marks.length) return state;
   if (state.marks[index] === "flagged") return state;
   if (state.status === "ready") {
@@ -159,10 +174,30 @@ function chord(state: GameState, index: number): GameState {
   return current;
 }
 
+function pause(state: GameState): GameState {
+  if (state.status !== "playing") return state;
+  return { ...state, status: "paused" };
+}
+
+function resume(state: GameState): GameState {
+  if (state.status !== "paused") return state;
+  return { ...state, status: "playing" };
+}
+
+function giveUp(state: GameState): GameState {
+  if (state.status !== "playing" && state.status !== "paused") return state;
+  return { ...state, status: "abandoned" };
+}
+
+function clearReview(state: GameState): GameState {
+  if (state.reviewIndex === null) return state;
+  return { ...state, reviewIndex: null };
+}
+
 export function reduce(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case "restart":
-      return newGame(state.config, action.seed ?? nextSeed(state.seed));
+      return newGame(state.config, action.seed ?? nextSeed(state.seed), state.mode);
     case "start":
       return start(state, action.board, action.firstIndex, action.seed);
     case "reveal":
@@ -171,5 +206,13 @@ export function reduce(state: GameState, action: GameAction): GameState {
       return toggleFlag(state, action.index);
     case "chord":
       return chord(state, action.index);
+    case "pause":
+      return pause(state);
+    case "resume":
+      return resume(state);
+    case "giveUp":
+      return giveUp(state);
+    case "clearReview":
+      return clearReview(state);
   }
 }

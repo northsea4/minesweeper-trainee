@@ -33,10 +33,13 @@ export interface Board {
   cells: Cell[];
 }
 
-export type GameStatus = "ready" | "playing" | "won" | "lost";
+export type GameMode = "training" | "challenge";
+
+export type GameStatus = "ready" | "playing" | "paused" | "won" | "lost" | "abandoned";
 
 export interface GameState {
   config: BoardConfig;
+  mode: GameMode;
   seed: number;
   status: GameStatus;
   firstIndex: number | null;
@@ -45,6 +48,7 @@ export interface GameState {
   revealedCount: number;
   flaggedCount: number;
   reviewIndex: number | null;
+  revives: number;
 }
 
 export type GameAction =
@@ -52,4 +56,8 @@ export type GameAction =
   | { type: "reveal"; index: number }
   | { type: "toggleFlag"; index: number }
   | { type: "chord"; index: number }
+  | { type: "pause" }
+  | { type: "resume" }
+  | { type: "giveUp" }
+  | { type: "clearReview" }
   | { type: "restart"; seed?: number };

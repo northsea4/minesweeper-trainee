@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useState } from "preact/hooks";
 import { App } from "./app/App.tsx";
 import { DEFAULT_PRESET } from "./core/presets.ts";
-import type { BoardConfig } from "./core/types.ts";
+import type { BoardConfig, GameMode } from "./core/types.ts";
 import "./styles.css";
 
 function configFromUrl(): BoardConfig {
@@ -25,17 +25,26 @@ function seedFromUrl(): number | undefined {
   return Number.isFinite(seed) ? seed >>> 0 : undefined;
 }
 
+function modeFromUrl(): GameMode {
+  return new URLSearchParams(window.location.search).get("mode") === "challenge"
+    ? "challenge"
+    : "training";
+}
+
 function Root() {
   const [config, setConfig] = useState(configFromUrl);
   const [seed, setSeed] = useState<number | undefined>(seedFromUrl);
+  const [mode, setMode] = useState<GameMode>(modeFromUrl);
   return (
     <App
-      key={`${config.width}x${config.height}x${config.mines}:${seed ?? "random"}`}
+      key={`${config.width}x${config.height}x${config.mines}:${seed ?? "random"}:${mode}`}
       config={config}
       seed={seed}
-      onNewConfig={(next) => {
+      mode={mode}
+      onNewGame={(nextConfig, nextMode) => {
         setSeed(undefined);
-        setConfig(next);
+        setConfig(nextConfig);
+        setMode(nextMode);
       }}
     />
   );

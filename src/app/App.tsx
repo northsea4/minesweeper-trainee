@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { GenerateFailure } from "../core/generator.ts";
 import { DEFAULT_PRESET, PRESETS } from "../core/presets.ts";
-import { boardKey, remainingMines } from "../core/rules.ts";
-import type { BoardConfig, BoardKey, GameAction, GameState } from "../core/types.ts";
+import { boardKey, isPlayable, remainingMines } from "../core/rules.ts";
+import type { BoardConfig, BoardKey, GameAction, GameMode, GameState } from "../core/types.ts";
 import { BoardView } from "../ui/boardView.ts";
 import { settings, type RevealMode } from "./settings.ts";
-import { type Mode, Store } from "./store.ts";
+import { Store } from "./store.ts";
 import { WorkerSolver } from "../worker/solverClient.ts";
 
 export interface DebugApi {
@@ -15,7 +15,7 @@ export interface DebugApi {
     state: GameState;
     boardKey: BoardKey | null;
     elapsedMs: number;
-    mode: Mode;
+    mode: GameMode;
     reviveCount: number;
     frozen: boolean;
     pending: boolean;
@@ -66,10 +66,14 @@ function statusText(state: GameState, pending: boolean): string {
       return "点第一格开始";
     case "playing":
       return "进行中";
+    case "paused":
+      return state.mode === "challenge" ? "已暂停（计时继续）" : "已暂停";
     case "won":
       return "胜利！";
     case "lost":
       return "触雷了";
+    case "abandoned":
+      return "已放弃";
   }
 }
 
@@ -81,16 +85,16 @@ const REVEAL_MODE_LABELS: Record<RevealMode, string> = {
 export function App({
   config,
   seed,
-  mode = "training",
-  onNewConfig,
+  mode,
+  onNewGame,
 }: {
   config: BoardConfig;
   seed?: number;
-  mode?: Mode;
-  onNewConfig: (config: BoardConfig) => void;
+  mode: GameMode;
+  onNewGame: (config: BoardConfig, mode: GameMode) => void;
 }) {
   const solver = useRef(new WorkerSolver()).current;
-  const [store, setStore] = useState(() => new Store(config, seed ?? randomSeed(), mode, solver));
+  const [store] = useState(() => new Store(config, seed ?? randomSeed(), mode, solver));
   const boardHost = useRef<HTMLDivElement>(null);
   const [, forceRender] = useState(0);
 
@@ -107,10 +111,7 @@ export function App({
         {
           getRevealMode: () => settings.get().revealMode,
           isLocked: () =>
-            store.isFrozen() ||
-            store.isPending() ||
-            store.getState().status === "won" ||
-            store.getState().status === "lost",
+            store.isFrozen() || store.isPending() || !isPlayable(store.getState()),
         },
       ),
     [store],
@@ -125,7 +126,7 @@ export function App({
     });
     const unsubscribeSettings = settings.subscribe(() => forceRender((n) => n + 1));
     const timer = window.setInterval(() => {
-      if (store.getState().status === "playing") forceRender((n) => n + 1);
+      if (isPlayable(store.getState())) forceRender((n) => n + 1);
     }, 250);
     window.__ms = {
       getState: () => store.getState(),
@@ -154,9 +155,9 @@ export function App({
   const revealMode = settings.get().revealMode;
   const pending = store.isPending();
   const error = store.getError();
-
-  const startNew = (nextConfig: BoardConfig) =>
-    setStore(new Store(nextConfig, randomSeed(), mode, solver));
+  const paused = state.status === "paused";
+  const canPause = state.status === "playing" || state.status === "paused";
+  const canGiveUp = state.status === "playing" || state.status === "paused";
 
   return (
     <main class="app">
@@ -177,13 +178,23 @@ export function App({
       {error && (
         <div class="banner banner--error" data-testid="error" role="alert">
           <span>{ERROR_TEXT[error]}</span>
-          <button type="button" onClick={() => startNew(config)}>
+          <button type="button" onClick={() => onNewGame(config, mode)}>
             重试
           </button>
         </div>
       )}
 
-      <div class="board-host" ref={boardHost} data-testid="board" />
+      <div class="board-wrap">
+        <div class="board-host" ref={boardHost} data-testid="board" />
+        {paused && (
+          <div class="pause-mask" data-testid="pause-mask">
+            <span>已暂停</span>
+            <button type="button" onClick={() => store.dispatch({ type: "resume" })}>
+              继续
+            </button>
+          </div>
+        )}
+      </div>
       {pending && <div class="pending" data-testid="pending">生成无猜棋盘…</div>}
 
       <div class="controls">
@@ -193,7 +204,7 @@ export function App({
           value={presetIdOf(config)}
           onChange={(event) => {
             const next = PRESETS_MAP[event.currentTarget.value];
-            if (next) onNewConfig(next);
+            if (next) onNewGame(next, mode);
           }}
         >
           {PRESET_OPTIONS.map((preset) => (
@@ -201,6 +212,16 @@ export function App({
               {preset.name}
             </option>
           ))}
+        </select>
+        <select
+          class="controls__mode"
+          aria-label="模式"
+          data-testid="mode"
+          value={mode}
+          onChange={(event) => onNewGame(config, event.currentTarget.value as GameMode)}
+        >
+          <option value="training">训练</option>
+          <option value="challenge">计时挑战</option>
         </select>
         <button
           type="button"
@@ -212,7 +233,29 @@ export function App({
         >
           {REVEAL_MODE_LABELS[revealMode]}
         </button>
-        <button type="button" class="controls__new" onClick={() => startNew(config)}>
+        <button
+          type="button"
+          class="controls__pause"
+          data-testid="pause"
+          disabled={!canPause}
+          onClick={() => store.dispatch({ type: paused ? "resume" : "pause" })}
+        >
+          {paused ? "继续" : "暂停"}
+        </button>
+        <button
+          type="button"
+          class="controls__giveup"
+          data-testid="giveup"
+          disabled={!canGiveUp}
+          onClick={() => store.dispatch({ type: "giveUp" })}
+        >
+          放弃
+        </button>
+        <button
+          type="button"
+          class="controls__new"
+          onClick={() => onNewGame(config, mode)}
+        >
           新游戏
         </button>
       </div>
