@@ -296,6 +296,44 @@ body {
 .cell--dots.cell--d7::after { content: "•••••••"; }
 .cell--dots.cell--d8::after { content: "••••••••"; }
 
+.cell--hl {
+  outline: 3px solid var(--accent);
+  outline-offset: -1px;
+  z-index: 1;
+}
+
+.cell--hl-mine {
+  outline-color: var(--danger);
+}
+
+.cell--hl-target {
+  outline-width: 4px;
+  outline-offset: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.aids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+.aids__button {
+  font-size: 15px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.aids__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .pending {
   font-size: 14px;
   color: var(--muted);

@@ -46,6 +46,7 @@ export class BoardView {
   private aim: Aim | null = null;
   private pinch: { distance: number; scale: number; midX: number; midY: number; tx: number; ty: number } | null = null;
   private transform = { scale: 1, tx: 0, ty: 0 };
+  private highlight: { cells: number[]; kind: "safe" | "mine"; target: number } | null = null;
 
   constructor(
     private callbacks: BoardCallbacks,
@@ -73,6 +74,10 @@ export class BoardView {
     window.removeEventListener("pointermove", this.onPointerMove);
     window.removeEventListener("pointerup", this.onPointerUp);
     window.removeEventListener("pointercancel", this.onPointerUp);
+  }
+
+  setHighlight(highlight: { cells: number[]; kind: "safe" | "mine"; target: number } | null): void {
+    this.highlight = highlight;
   }
 
   render(state: GameState): void {
@@ -143,6 +148,11 @@ export class BoardView {
     cell.classList.toggle("cell--flagged", mark === "flagged");
     cell.classList.toggle("cell--mine", showMine);
     cell.classList.toggle("cell--boom", state.reviewIndex === index);
+    const highlighted = this.highlight?.cells.includes(index) ?? false;
+    cell.classList.toggle("cell--hl", highlighted);
+    cell.classList.toggle("cell--hl-safe", highlighted && this.highlight?.kind === "safe");
+    cell.classList.toggle("cell--hl-mine", highlighted && this.highlight?.kind === "mine");
+    cell.classList.toggle("cell--hl-target", this.highlight?.target === index);
     for (let n = 1; n <= 8; n++) {
       cell.classList.toggle(`cell--n${n}`, mark === "revealed" && adjacent === n);
       cell.classList.toggle(

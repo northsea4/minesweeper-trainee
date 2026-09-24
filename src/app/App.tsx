@@ -4,9 +4,10 @@ import { DEFAULT_PRESET, PRESETS } from "../core/presets.ts";
 import { boardKey, isPlayable, remainingMines } from "../core/rules.ts";
 import type { BoardConfig, BoardKey, GameAction, GameMode, GameState } from "../core/types.ts";
 import { BoardView } from "../ui/boardView.ts";
+import { CONFLICT_TEXT, NO_AID_TEXT, presentAid } from "../ui/aidText.ts";
 import { Sensory } from "./sensory.ts";
 import { settings, type RevealMode, type ThemeChoice } from "./settings.ts";
-import { Store } from "./store.ts";
+import { Store, type AidState } from "./store.ts";
 import { WorkerSolver } from "../worker/solverClient.ts";
 
 export interface DebugApi {
@@ -21,6 +22,9 @@ export interface DebugApi {
     frozen: boolean;
     pending: boolean;
     error: GenerateFailure | null;
+    aidKind: string | null;
+    aidTarget: number | null;
+    aidConflict: boolean;
   };
 }
 
@@ -146,6 +150,7 @@ export function App({
 
   useEffect(() => {
     if (boardHost.current) view.mount(boardHost.current);
+    applyAid(view, store);
     view.render(store.getState());
     const unsubscribe = store.subscribe(() => {
       const snapshot = store.getState();
@@ -154,6 +159,7 @@ export function App({
         else if (snapshot.status === "lost") sensory.cue("lose");
         lastStatus.current = snapshot.status;
       }
+      applyAid(view, store);
       view.render(snapshot);
       forceRender((n) => n + 1);
     });
@@ -176,6 +182,9 @@ export function App({
         frozen: store.isFrozen(),
         pending: store.isPending(),
         error: store.getError(),
+        aidKind: store.getAid()?.kind ?? null,
+        aidTarget: store.getAid()?.step?.index ?? null,
+        aidConflict: store.getAid()?.conflict ?? false,
       }),
     };
     return () => {
@@ -188,6 +197,7 @@ export function App({
   }, [store, view, sensory]);
 
   const state = store.getState();
+  const aid = store.getAid();
   const { revealMode, theme, sound, haptics, numberDots } = settings.get();
   const pending = store.isPending();
   const error = store.getError();
@@ -211,7 +221,9 @@ export function App({
         </div>
       </header>
 
-      <div class="hintbar" data-testid="hintbar" aria-live="polite" />
+      <div class="hintbar" data-testid="hintbar" aria-live="polite">
+        {aidMessage(aid)}
+      </div>
 
       {error && (
         <div class="banner banner--error" data-testid="error" role="alert">
@@ -234,6 +246,38 @@ export function App({
         )}
       </div>
       {pending && <div class="pending" data-testid="pending">生成无猜棋盘…</div>}
+
+      {mode === "training" && (
+        <div class="aids" data-testid="aids">
+          <button
+            type="button"
+            class="aids__button"
+            data-testid="hint"
+            disabled={state.status !== "playing"}
+            onClick={() => store.requestHint()}
+          >
+            帮帮我（提示）
+          </button>
+          <button
+            type="button"
+            class="aids__button"
+            data-testid="smart"
+            disabled={state.status !== "playing"}
+            onClick={() => store.requestSmartHint()}
+          >
+            解释原因
+          </button>
+          <button
+            type="button"
+            class="aids__button"
+            data-testid="leader"
+            disabled={state.status !== "playing"}
+            onClick={() => (aid?.kind === "leader" ? store.stopLeader() : store.startLeader())}
+          >
+            {aid?.kind === "leader" ? "停止领航" : "领航演示"}
+          </button>
+        </div>
+      )}
 
       <div class="controls">
         <select
@@ -344,6 +388,31 @@ export function App({
       </details>
     </main>
   );
+}
+
+function applyAid(view: BoardView, store: Store): void {
+  const aid = store.getAid();
+  if (!aid?.step) {
+    view.setHighlight(null);
+    return;
+  }
+  const presentation = presentAid(aid.step, aid.kind !== "hint");
+  view.setHighlight({
+    cells: [...presentation.highlight, ...presentation.conclusion],
+    kind: presentation.kind,
+    target: presentation.target,
+  });
+}
+
+function aidMessage(aid: AidState | null): string {
+  if (!aid) return "";
+  if (aid.step) {
+    const presentation = presentAid(aid.step, aid.kind !== "hint");
+    const prefix = aid.kind === "hint" ? `第 ${presentation.target + 1} 格：` : "";
+    const text = `${prefix}${presentation.text}`;
+    return aid.conflict ? `${text} ${CONFLICT_TEXT}` : text;
+  }
+  return aid.conflict ? CONFLICT_TEXT : NO_AID_TEXT;
 }
 
 function applyTheme(store: typeof settings): () => void {

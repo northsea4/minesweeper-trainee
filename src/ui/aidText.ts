@@ -1,0 +1,50 @@
+import type { Deduction } from "../core/analyze.ts";
+
+export interface AidPresentation {
+  text: string;
+  detail: boolean;
+  highlight: number[];
+  conclusion: number[];
+  target: number;
+  kind: "safe" | "mine";
+}
+
+export function presentAid(step: Deduction, detail: boolean): AidPresentation {
+  const kind = step.action === "reveal" ? "safe" : "mine";
+  const clue = step.proof.clueCells[0];
+  const clueValue = step.proof.inputSets[0]?.mines;
+  const conclusion = step.proof.conclusion.cells;
+
+  if (!detail) {
+    const text = step.action === "reveal" ? "这一格是安全的" : "这一格一定是雷";
+    return { text, detail, highlight: clue !== undefined ? [clue] : [], conclusion, target: step.index, kind };
+  }
+
+  let text: string;
+  switch (step.proof.technique) {
+    case "direct-safe":
+      text = `数字 ${clueValue} 周围的雷已经找齐，标出的格子是安全的。`;
+      break;
+    case "direct-mine":
+      text = `数字 ${clueValue} 周围还没揭开的格子，全都是雷。`;
+      break;
+    case "subset":
+      text = "把两处数字的线索合起来，就能确定标出的格子。";
+      break;
+    case "overlap":
+      text = "两处数字的线索重叠在一起，能确定标出的格子。";
+      break;
+    case "global-count":
+      text =
+        step.action === "reveal"
+          ? "剩下的雷都找到了，其余格子都安全。"
+          : "剩下没揭开的格子，正好都是雷。";
+      break;
+    default:
+      text = step.action === "reveal" ? "这一格是安全的。" : "这一格一定是雷。";
+  }
+  return { text, detail, highlight: clue !== undefined ? [clue] : [], conclusion, target: step.index, kind };
+}
+
+export const CONFLICT_TEXT = "你的某个标记可能有误，先看看标出的安全格。";
+export const NO_AID_TEXT = "现在没有能确定的下一步，先自己试试吧。";

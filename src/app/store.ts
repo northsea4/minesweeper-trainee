@@ -1,5 +1,7 @@
+import type { Deduction } from "../core/analyze.ts";
+import { nextAid } from "../core/aid.ts";
 import type { GenerateFailure, GenerateRequest } from "../core/generator.ts";
-import { isTimerRunning, newGame, reduce } from "../core/rules.ts";
+import { isPlayable, isTimerRunning, newGame, reduce } from "../core/rules.ts";
 import type { BoardConfig, GameAction, GameMode, GameState } from "../core/types.ts";
 import { inlineSolver, type Solver } from "../worker/solverClient.ts";
 
@@ -8,6 +10,15 @@ export type Mode = GameMode;
 export type ElapsedSource = () => number;
 
 const REVIVE_FREEZE_MS = 700;
+const LEADER_INTERVAL_MS = 450;
+
+export type AidKind = "hint" | "smart" | "leader";
+
+export interface AidState {
+  kind: AidKind;
+  step: Deduction | null;
+  conflict: boolean;
+}
 
 export class Store {
   private state: GameState;
@@ -18,6 +29,8 @@ export class Store {
   private freezeTimer: number | null = null;
   private pending = false;
   private error: GenerateFailure | null = null;
+  private aid: AidState | null = null;
+  private leaderTimer: number | null = null;
 
   constructor(
     config: BoardConfig,
@@ -53,6 +66,90 @@ export class Store {
     return this.error;
   }
 
+  getAid(): AidState | null {
+    return this.aid;
+  }
+
+  requestHint(): void {
+    this.computeAid("hint");
+  }
+
+  requestSmartHint(): void {
+    this.computeAid("smart");
+  }
+
+  startLeader(): void {
+    this.stopLeader();
+    if (!this.state.board || !isPlayable(this.state)) return;
+    this.leaderTick();
+  }
+
+  stopLeader(): void {
+    if (this.leaderTimer !== null) {
+      window.clearTimeout(this.leaderTimer);
+      this.leaderTimer = null;
+    }
+    if (this.aid?.kind === "leader") {
+      this.aid = null;
+      this.emit();
+    }
+  }
+
+  clearAid(): void {
+    if (this.aid !== null) {
+      this.aid = null;
+      this.emit();
+    }
+  }
+
+  private aidInputs(): {
+    revealedNumbers: Map<number, number>;
+    playerFlags: Set<number>;
+  } | null {
+    const state = this.state;
+    if (!state.board) return null;
+    const revealedNumbers = new Map<number, number>();
+    const playerFlags = new Set<number>();
+    for (let index = 0; index < state.marks.length; index++) {
+      if (state.marks[index] === "revealed") {
+        revealedNumbers.set(index, state.board.cells[index].adjacent);
+      } else if (state.marks[index] === "flagged") {
+        playerFlags.add(index);
+      }
+    }
+    return { revealedNumbers, playerFlags };
+  }
+
+  private computeAid(kind: AidKind): void {
+    if (!isPlayable(this.state)) return;
+    const inputs = this.aidInputs();
+    if (!inputs) return;
+    const result = nextAid(this.state.board!, inputs.revealedNumbers, inputs.playerFlags);
+    this.aid = { kind, step: result.step, conflict: result.conflict };
+    this.emit();
+  }
+
+  private leaderTick(): void {
+    this.leaderTimer = null;
+    if (!isPlayable(this.state)) {
+      this.aid = null;
+      this.emit();
+      return;
+    }
+    const inputs = this.aidInputs();
+    if (!inputs) return;
+    const result = nextAid(this.state.board!, inputs.revealedNumbers, inputs.playerFlags);
+    this.aid = { kind: "leader", step: result.step, conflict: result.conflict };
+    this.emit();
+    if (!result.step) return;
+    const step = result.step;
+    if (step.action === "reveal") this.commit({ type: "reveal", index: step.index });
+    else this.commit({ type: "toggleFlag", index: step.index });
+    if (isPlayable(this.state)) {
+      this.leaderTimer = window.setTimeout(() => this.leaderTick(), LEADER_INTERVAL_MS);
+    }
+  }
+
   getElapsedMs(): number {
     if (this.runningSince !== null) return this.accumulated + (this.now() - this.runningSince);
     return this.accumulated;
@@ -65,10 +162,15 @@ export class Store {
 
   dispatch(action: GameAction): void {
     if (this.frozen || this.pending) return;
+    if (this.aid?.kind === "leader") this.stopLeader();
+    else if (this.aid !== null) {
+      this.aid = null;
+    }
     if (action.type === "restart") {
       this.accumulated = 0;
       this.runningSince = null;
       this.error = null;
+      this.stopLeader();
     }
     if (action.type === "reveal" && this.state.status === "ready" && this.state.board === null) {
       this.requestGeneration(action.index);
@@ -114,6 +216,7 @@ export class Store {
       this.beginFreeze();
       return;
     }
+    if (!isPlayable(next) && this.leaderTimer !== null) this.stopLeader();
     this.emit();
   }
 
@@ -141,6 +244,7 @@ export class Store {
 
   dispose(): void {
     if (this.freezeTimer !== null) window.clearTimeout(this.freezeTimer);
+    if (this.leaderTimer !== null) window.clearTimeout(this.leaderTimer);
     this.listeners.clear();
   }
 
