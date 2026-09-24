@@ -31,6 +31,7 @@ export class Store {
   private error: GenerateFailure | null = null;
   private aid: AidState | null = null;
   private leaderTimer: number | null = null;
+  private aidUsage = { hint: 0, smart: 0, leader: 0 };
 
   constructor(
     config: BoardConfig,
@@ -70,17 +71,24 @@ export class Store {
     return this.aid;
   }
 
+  getAidUsage(): { hint: number; smart: number; leader: number; revives: number } {
+    return { ...this.aidUsage, revives: this.state.revives };
+  }
+
   requestHint(): void {
+    this.aidUsage.hint++;
     this.computeAid("hint");
   }
 
   requestSmartHint(): void {
+    this.aidUsage.smart++;
     this.computeAid("smart");
   }
 
   startLeader(): void {
     this.stopLeader();
     if (!this.state.board || !isPlayable(this.state)) return;
+    this.aidUsage.leader++;
     this.leaderTick();
   }
 

@@ -3,8 +3,17 @@ import type { GenerateFailure } from "../core/generator.ts";
 import { DEFAULT_PRESET, PRESETS } from "../core/presets.ts";
 import { boardKey, isPlayable, remainingMines } from "../core/rules.ts";
 import type { BoardConfig, BoardKey, GameAction, GameMode, GameState } from "../core/types.ts";
+import {
+  fmtDuration,
+  makeRecord,
+  outcomeOf,
+  personalBest,
+  recentFor,
+  type GameRecord,
+} from "../core/records.ts";
 import { BoardView } from "../ui/boardView.ts";
 import { CONFLICT_TEXT, NO_AID_TEXT, presentAid } from "../ui/aidText.ts";
+import { HistoryStore } from "./history.ts";
 import { Sensory } from "./sensory.ts";
 import { settings, type RevealMode, type ThemeChoice } from "./settings.ts";
 import { Store, type AidState } from "./store.ts";
@@ -106,9 +115,11 @@ export function App({
 }) {
   const solver = useRef(new WorkerSolver()).current;
   const sensory = useRef(new Sensory(settings)).current;
+  const history = useRef(new HistoryStore()).current;
   const [store] = useState(() => new Store(config, seed ?? randomSeed(), mode, solver));
   const boardHost = useRef<HTMLDivElement>(null);
   const lastStatus = useRef(store.getState().status);
+  const recorded = useRef(false);
   const [, forceRender] = useState(0);
 
   useEffect(() => {
@@ -158,11 +169,31 @@ export function App({
         if (snapshot.status === "won") sensory.cue("win");
         else if (snapshot.status === "lost") sensory.cue("lose");
         lastStatus.current = snapshot.status;
+        const outcome = outcomeOf(snapshot.status);
+        if (outcome && !recorded.current) {
+          recorded.current = true;
+          void history.add(
+            makeRecord({
+              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              config,
+              boardKey: boardKey(snapshot),
+              mode: snapshot.mode,
+              outcome,
+              durationMs: store.getElapsedMs(),
+              aids: store.getAidUsage(),
+              timestamp: Date.now(),
+            }),
+          );
+        } else if (snapshot.status === "ready") {
+          recorded.current = false;
+        }
       }
       applyAid(view, store);
       view.render(snapshot);
       forceRender((n) => n + 1);
     });
+    const unsubscribeHistory = history.subscribe(() => forceRender((n) => n + 1));
+    void history.whenReady().then(() => forceRender((n) => n + 1));
     const unsubscribeSettings = settings.subscribe(() => {
       view.render(store.getState());
       forceRender((n) => n + 1);
@@ -190,6 +221,7 @@ export function App({
     return () => {
       unsubscribe();
       unsubscribeSettings();
+      unsubscribeHistory();
       window.clearInterval(timer);
       store.dispose();
       view.destroy();
@@ -204,6 +236,9 @@ export function App({
   const paused = state.status === "paused";
   const canPause = state.status === "playing" || state.status === "paused";
   const canGiveUp = state.status === "playing" || state.status === "paused";
+  const records = history.list();
+  const best = personalBest(records, config);
+  const recent = recentFor(records, config, 20);
 
   return (
     <main class="app">
@@ -338,6 +373,28 @@ export function App({
         </button>
       </div>
 
+      <details class="history" data-testid="history">
+        <summary>历史与排行</summary>
+        <div class="history__body">
+          <div class="history__pb" data-testid="pb">
+            个人最佳：{best ? fmtDuration(best.durationMs) : "—"}
+          </div>
+          <ul class="history__list">
+            {recent.length === 0 && <li class="history__empty">还没有对局记录</li>}
+            {recent.map((r) => (
+              <li class="history__item" data-testid="history-item" key={r.id}>
+                <span class="history__mode">{r.mode === "training" ? "训练" : "挑战"}</span>
+                <span>{outcomeLabel(r)}</span>
+                <span>{fmtDuration(r.durationMs)}</span>
+                <span class="history__badge">
+                  {r.mode === "training" ? "训练 · 不计排名" : r.valid ? "有效" : "无结果"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </details>
+
       <details class="settings" data-testid="settings">
         <summary>设置</summary>
         <div class="settings__grid">
@@ -413,6 +470,17 @@ function aidMessage(aid: AidState | null): string {
     return aid.conflict ? `${text} ${CONFLICT_TEXT}` : text;
   }
   return aid.conflict ? CONFLICT_TEXT : NO_AID_TEXT;
+}
+
+function outcomeLabel(record: GameRecord): string {
+  switch (record.outcome) {
+    case "won":
+      return "胜利";
+    case "lost":
+      return "失败";
+    case "abandoned":
+      return "放弃";
+  }
 }
 
 function applyTheme(store: typeof settings): () => void {
