@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE · 低龄初学者渐进训练体验</title>
+<style>
+  :root {
+    --accent: #2f6fed;
+    --ink: #14181f;
+    --muted: #5b6472;
+    --line: #e2e6ec;
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "PingFang SC", "Segoe UI", system-ui, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 28px 20px 80px; }
+  .proto-banner {
+    background: #fff4d6; border: 1px solid #f0d38a; color: #7a5b00;
+    padding: 8px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 20px;
+  }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .q { color: var(--muted); margin: 0 0 22px; max-width: 780px; }
+  h2 { font-size: 16px; margin: 26px 0 10px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .state-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 22px; }
+  .field { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--line); padding: 5px 0; }
+  .field .k { color: var(--muted); }
+  .field .v { font-weight: 600; text-align: right; }
+  .field.changed .v { color: var(--accent); }
+  .aid {
+    margin: 14px 0 4px; padding: 12px 14px; border-radius: 10px;
+    border: 1px dashed var(--accent); background: #eef3ff; font-size: 14px;
+  }
+  .aid.nudge { border-style: solid; background: #fff4d6; border-color: #f0d38a; color: #7a5b00; }
+  .aid.blocked { border-style: solid; background: #fdeeee; border-color: #f0b8b8; color: #8a3a3a; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line);
+    background: #fff; padding: 7px 12px; color: var(--ink);
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { opacity: .92; color: #fff; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .tab { border: 1px solid var(--line); background: #fff; padding: 6px 11px; border-radius: 999px; font-size: 13px; }
+  .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .scenario-desc { color: var(--muted); margin: 4px 0 14px; }
+  .steps { list-style: none; padding: 0; margin: 0; }
+  .steps li { margin: 6px 0; }
+  .steps li.done button { border-color: #cfe0ff; color: var(--accent); }
+  .steps li.current button { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .hint-text { color: var(--muted); font-size: 13px; }
+  .legend { color: var(--muted); font-size: 13px; }
+  code { background: #eef1f5; padding: 1px 5px; border-radius: 5px; font-size: 13px; }
+  .rule { color: var(--muted); font-size: 13px; border-left: 2px solid var(--line); padding-left: 10px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="proto-banner">
+    <strong>PROTOTYPE</strong> — 一次性产物，用于回答「原型化低龄初学者的渐进训练体验」的问题，不是生产代码。
+  </div>
+
+  <h1>低龄初学者的渐进训练体验</h1>
+  <p class="q">
+    让一个 6–8 岁、从未玩过扫雷的孩子，在不看外部教程的情况下逐渐独立完成初级<strong>训练对局</strong>，
+    同时不让熟练玩家感到干扰。探索的模型：<strong>提示 / 智能提示 / 领航</strong>分别在<strong>何时出现</strong>、
+    展示<strong>多少推理</strong>、执行<strong>什么动作</strong>。
+  </p>
+
+  <h2>当前状态</h2>
+  <div class="card">
+    <div class="state-grid" id="stateGrid"></div>
+    <div id="aidSurface"></div>
+    <p class="rule" id="ruleNote"></p>
+  </div>
+
+  <h2>自由操作</h2>
+  <div class="card">
+    <div class="row" id="freeButtons"></div>
+    <p class="hint-text" style="margin-top:12px">
+      任意顺序都能点。观察：求助阶梯是否按 提示→智能提示→领航 递进；「先试一次门」是否挡住连点；
+      天花板是否随自主水平下降；轻推是否按自主水平淡出、且能被手动关掉。
+    </p>
+  </div>
+
+  <h2>引导式走查</h2>
+  <div class="card">
+    <div class="tabs" id="tabs"></div>
+    <div class="scenario-desc" id="scenarioDesc"></div>
+    <ol class="steps" id="steps"></ol>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+ * 纯逻辑模块（可整块搬进真实代码库；不含 DOM，不引用页面元素）
+ * 题目：训练辅助的「出现 / 推理深度 / 动作」模型
+ * 形态：一个 reducer (state, action) => state + 一组派生函数
+ * =======================================================================*/
+
+const TrainingAid = (() => {
+  const NUDGE_AFTER = 8;          // 训练对局闲置多少秒后轻推求助（不自动解题）
+  const LADDER = ['hint', 'smart', 'leader'];
+
+  function initial() {
+    return {
+      mode: 'training',     // training | challenge
+      boardPhase: 'ready',  // ready | playing | finished
+      stuck: false,
+      idleSeconds: 0,
+      helpStep: 0,          // 本次「卡住」内求助阶梯已走到第几级
+      showAid: null,        // null | hint | smart | leader
+      aidReason: null,      // requested | nudge | mine
+      nudge: false,         // 是否轻推求助按钮（自动）
+      nudgeEnabled: true,   // 手动开关：是否允许轻推
+      blockedAid: false,    // 先试一次门：自上次辅助以来是否还没独立操作
+      unaidedStreak: 0,     // 连续独立成功次数
+      gamesWon: 0,
+      lastEvent: '就绪',
+    };
+  }
+
+  // 自主水平：由表现派生（注意——不是由“初学者/熟练”标签决定）
+  function autonomy(s) {
+    if (s.unaidedStreak >= 8 || s.gamesWon >= 2) return 'independent';
+    if (s.unaidedStreak >= 3) return 'practising';
+    return 'guided';
+  }
+
+  // (a) 自主天花板：阶梯可用上限随自主水平下降
+  function ladderCeiling(s) {
+    return { guided: 2, practising: 1, independent: 0 }[autonomy(s)];
+  }
+
+  function aidsAvailable(s) {
+    return s.mode === 'training';
+  }
+
+  function reduce(state, action) {
+    const s = { ...state };
+    switch (action.type) {
+      case 'REVEAL_OK':                       // 独立揭格成功
+        s.boardPhase = 'playing';
+        s.unaidedStreak += 1;
+        s.stuck = false; s.idleSeconds = 0; s.helpStep = 0;
+        s.showAid = null; s.aidReason = null; s.nudge = false;
+        s.blockedAid = false;                 // 独立操作 → 先试一次门重新就绪
+        s.lastEvent = '独立揭格成功';
+        break;
+
+      case 'MISCLICK':                        // 误点（未触雷）
+        s.unaidedStreak = 0;
+        s.lastEvent = '误点';
+        break;
+
+      case 'HIT_MINE':
+        s.unaidedStreak = 0;
+        if (s.mode === 'training') {          // 规则：训练触雷自动复活
+          s.boardPhase = 'playing';
+          s.showAid = 'smart';
+          s.aidReason = 'mine';
+          s.stuck = false; s.nudge = false;
+          s.blockedAid = true;                // 自动给的辅助也算用掉一次，需先自己走一步
+          s.lastEvent = '触雷 → 自动复活，并主动弹出智能提示解释';
+        } else {                              // 规则：挑战触雷判负
+          s.boardPhase = 'finished';
+          s.lastEvent = '触雷 → 挑战失败';
+        }
+        break;
+
+      case 'STUCK':                           // 学习者无思路
+        s.stuck = true; s.idleSeconds = 0; s.helpStep = 0;
+        s.lastEvent = '卡住：等待学习者主动求助';
+        break;
+
+      case 'TICK':                            // 经过 1 秒
+        if (s.stuck) s.idleSeconds += 1;
+        if (aidsAvailable(s) && s.nudgeEnabled && s.stuck &&
+            s.idleSeconds >= NUDGE_AFTER && autonomy(s) !== 'independent' &&
+            !s.showAid) {
+          s.nudge = true;
+          s.lastEvent = '闲置过久 → 轻推求助按钮（仍不自动解题）';
+        }
+        break;
+
+      case 'HELP':                            // 学习者点了「帮帮我」
+        if (!aidsAvailable(s)) { s.lastEvent = '计时挑战：辅助不可用'; break; }
+        if (s.blockedAid) { s.lastEvent = '先试一次门：先自己走一步，再回来求助'; break; }
+        const cap = ladderCeiling(s);
+        const idx = Math.min(s.helpStep, cap);
+        s.showAid = LADDER[idx];
+        s.aidReason = 'requested';
+        s.helpStep += 1;
+        s.blockedAid = true;                  // 用完辅助，需再独立操作一次
+        s.nudge = false;
+        s.lastEvent = '求助 → ' + label(s.showAid) +
+          (s.helpStep > cap ? '（已达到当前自主水平的上限）' : '');
+        break;
+
+      case 'DISMISS':
+        s.showAid = null; s.aidReason = null; s.nudge = false;
+        s.lastEvent = '关闭辅助';
+        break;
+
+      case 'WIN':
+        s.gamesWon += 1;
+        s.boardPhase = 'finished';
+        s.unaidedStreak = s.showAid ? 0 : s.unaidedStreak + 1;
+        s.stuck = false; s.helpStep = 0; s.showAid = null; s.nudge = false;
+        s.blockedAid = false;
+        s.lastEvent = s.showAid ? '胜利' : '胜利（全程独立）';
+        break;
+
+      case 'FORFEIT':
+        s.boardPhase = 'finished';
+        s.stuck = false; s.helpStep = 0; s.showAid = null; s.nudge = false;
+        s.lastEvent = '放弃（无结果）';
+        break;
+
+      case 'NEW_GAME': {
+        const keep = { mode: s.mode, gamesWon: s.gamesWon, unaidedStreak: s.unaidedStreak };
+        Object.assign(s, initial(), keep);
+        s.lastEvent = '新局';
+        break;
+      }
+
+      case 'SET_MODE':
+        s.mode = action.value;
+        if (s.mode === 'challenge') { s.showAid = null; s.nudge = false; s.aidReason = null; }
+        s.lastEvent = s.mode === 'challenge' ? '进入计时挑战' : '进入训练对局';
+        break;
+
+      case 'TOGGLE_NUDGE':
+        s.nudgeEnabled = !s.nudgeEnabled;
+        if (!s.nudgeEnabled) s.nudge = false;
+        s.lastEvent = s.nudgeEnabled ? '开启轻推（手动开关）' : '关闭轻推（手动开关）';
+        break;
+
+      default: break;
+    }
+    return s;
+  }
+
+  function label(aid) {
+    return { hint: '提示', smart: '智能提示', leader: '领航' }[aid] || '—';
+  }
+  function reasonLabel(r) {
+    return { requested: '学习者主动求助', nudge: '闲置轻推', mine: '触雷后的教学时刻' }[r] || '—';
+  }
+  function ceilingLabel(s) {
+    return { 2: '提示 / 智能提示 / 领航', 1: '至多智能提示', 0: '仅提示' }[ladderCeiling(s)];
+  }
+
+  return { initial, reduce, autonomy, aidsAvailable, ladderCeiling, ceilingLabel, label, reasonLabel };
+})();
+
+
+/* =========================================================================
+ * 以下为一次性页面外壳：很薄，只把状态画出来并把按钮接进 reducer。
+ * =======================================================================*/
+
+const SCENARIOS = [
+  {
+    id: 'first', title: '① 首次对局（快乐路径）',
+    desc: '低龄初学者第一局。卡住后先轻推；每多点一次「帮帮我」就递进一级。注意「先试一次门」：用掉一次辅助后，连点会被挡，必须先自己走一步才能继续求助——这正让辅助变成“提示你走”，而不是“替你走”。',
+    reset: () => Object.assign(TrainingAid.initial(), { mode: 'training', boardPhase: 'playing' }),
+    steps: [
+      { label: '独立揭开一格', type: 'REVEAL_OK' },
+      { label: '卡住，不知道下一步', type: 'STUCK' },
+      { label: '过了 8 秒（闲置）', type: 'TICK', times: 8 },
+      { label: '点「帮帮我」→ 提示', type: 'HELP' },
+      { label: '想再点一次（被挡）', type: 'HELP' },
+      { label: '照提示自己走一步', type: 'REVEAL_OK' },
+      { label: '再求助 → 智能提示', type: 'HELP' },
+      { label: '自己走一步', type: 'REVEAL_OK' },
+      { label: '再求助 → 领航', type: 'HELP' },
+      { label: '赢下这一局', type: 'WIN' },
+    ],
+  },
+  {
+    id: 'skilled', title: '② 熟练玩家不受打扰',
+    desc: '一个已经「已独立」的玩家快速游玩。轻推按自主水平自动关闭；辅助只有自己点才出现。看：是否真的做到了“零打扰”。',
+    reset: () => Object.assign(TrainingAid.initial(), { mode: 'training', boardPhase: 'playing', unaidedStreak: 8 }),
+    steps: [
+      { label: '独立揭开 A', type: 'REVEAL_OK' },
+      { label: '独立揭开 B', type: 'REVEAL_OK' },
+      { label: '卡住（但没人管他）', type: 'STUCK' },
+      { label: '过去 12 秒', type: 'TICK', times: 12 },
+      { label: '自己解决', type: 'REVEAL_OK' },
+      { label: '主动点一次「帮帮我」', type: 'HELP' },
+      { label: '关掉辅助', type: 'DISMISS' },
+      { label: '赢下这一局', type: 'WIN' },
+    ],
+  },
+  {
+    id: 'mine', title: '③ 触雷后的教学时刻',
+    desc: '初学者触雷。训练对局自动复活，模型另外主动弹出「智能提示」解释。看：这个教学时刻是帮忙还是打断心流；它默认弹出（已确认），但弹出后同样受“先试一次门”约束。',
+    reset: () => Object.assign(TrainingAid.initial(), { mode: 'training', boardPhase: 'playing' }),
+    steps: [
+      { label: '独立拉开一片', type: 'REVEAL_OK' },
+      { label: '触雷！', type: 'HIT_MINE' },
+      { label: '想立刻再求助（被挡）', type: 'HELP' },
+      { label: '照提示自己走一步', type: 'REVEAL_OK' },
+    ],
+  },
+  {
+    id: 'dependence', title: '④ 过度依赖 / 反制机制',
+    desc: '初学者想每局直接连点刷领航。(b) 先试一次门会拦住连点；(a) 天花板要求先攒够独立表现。看：这两个机制是否足够破掉“永久依赖”，又不至于把 6–8 岁逼到卡死。',
+    reset: () => Object.assign(TrainingAid.initial(), { mode: 'training', boardPhase: 'playing' }),
+    steps: [
+      { label: '卡住', type: 'STUCK' },
+      { label: '点「帮帮我」→ 提示', type: 'HELP' },
+      { label: '马上再点（被挡）', type: 'HELP' },
+      { label: '只好照提示走一步', type: 'REVEAL_OK' },
+      { label: '再求助 → 智能提示', type: 'HELP' },
+      { label: '连点想直接上领航（被挡）', type: 'HELP' },
+      { label: '继续自己走', type: 'REVEAL_OK' },
+    ],
+  },
+  {
+    id: 'ceiling', title: '⑤ 自主天花板生效',
+    desc: '一个已经独立（赢过 2 局）的玩家，天花板降到「仅提示」、轻推关闭。看：熟练者即使在训练对局里，也不会再拿到领航/智能提示，更不会被自动打扰。',
+    reset: () => Object.assign(TrainingAid.initial(), { mode: 'training', boardPhase: 'playing', gamesWon: 2, unaidedStreak: 8 }),
+    steps: [
+      { label: '卡住', type: 'STUCK' },
+      { label: '过去 12 秒（无轻推）', type: 'TICK', times: 12 },
+      { label: '主动求助 → 只剩提示', type: 'HELP' },
+      { label: '再求助（仍是提示，到顶了）', type: 'HELP' },
+    ],
+  },
+  {
+    id: 'manual', title: '⑥ 手动开关轻推',
+    desc: '轻推除了自动淡出，还有一个用户可用的手动开关。看：手动关掉后，即便还在“引导中”，闲置也不再轻推；再打开即恢复。',
+    reset: () => Object.assign(TrainingAid.initial(), { mode: 'training', boardPhase: 'playing' }),
+    steps: [
+      { label: '卡住', type: 'STUCK' },
+      { label: '过 8 秒 → 轻推出现', type: 'TICK', times: 8 },
+      { label: '手动关闭轻推', type: 'TOGGLE_NUDGE' },
+      { label: '再等 12 秒（不再轻推）', type: 'TICK', times: 12 },
+      { label: '重新打开轻推', type: 'TOGGLE_NUDGE' },
+    ],
+  },
+  {
+    id: 'challenge', title: '⑦ 计时挑战：辅助不可用',
+    desc: '同一个初学者进入计时挑战：辅助与轻推全部禁用，触雷判负。看：训练/挑战的身份边界是否清晰。',
+    reset: () => Object.assign(TrainingAid.initial(), { mode: 'challenge', boardPhase: 'playing' }),
+    steps: [
+      { label: '独立揭开一格', type: 'REVEAL_OK' },
+      { label: '卡住（无轻推）', type: 'STUCK' },
+      { label: '过 12 秒（依旧无轻推）', type: 'TICK', times: 12 },
+      { label: '想求助（被拒绝）', type: 'HELP' },
+      { label: '触雷！', type: 'HIT_MINE' },
+    ],
+  },
+];
+
+// ---- 页面外壳 ----
+let state = TrainingAid.initial();
+let activeScenario = 0;
+let stepIndex = 0;
+let lastFrame = null;
+
+const $ = (id) => document.getElementById(id);
+
+function changed(key) {
+  return lastFrame && state[key] !== lastFrame[key];
+}
+
+function render() {
+  const g = $('stateGrid');
+  const fields = [
+    ['模式', state.mode === 'training' ? '训练对局' : '计时挑战', 'mode'],
+    ['棋盘', ({ ready: '就绪', playing: '进行中', finished: '已结束' })[state.boardPhase], 'boardPhase'],
+    ['自主水平', ({ guided: '引导中', practising: '练习中', independent: '已独立' })[TrainingAid.autonomy(state)], null],
+    ['自主天花板', TrainingAid.ceilingLabel(state), null],
+    ['是否卡住', state.stuck ? '是' : '否', 'stuck'],
+    ['闲置秒数', state.idleSeconds, 'idleSeconds'],
+    ['连续独立成功', state.unaidedStreak, 'unaidedStreak'],
+    ['已赢局数', state.gamesWon, 'gamesWon'],
+    ['求助阶梯位置', state.helpStep, 'helpStep'],
+    ['当前辅助', state.showAid ? TrainingAid.label(state.showAid) : '无', 'showAid'],
+    ['辅助触发原因', state.aidReason ? TrainingAid.reasonLabel(state.aidReason) : '—', 'aidReason'],
+    ['轻推（自动）', state.nudge ? '是' : '否', 'nudge'],
+    ['轻推开关（手动）', state.nudgeEnabled ? '开' : '关', 'nudgeEnabled'],
+    ['先试一次门', state.blockedAid ? '需先独立走一步' : '已就绪', 'blockedAid'],
+  ];
+  g.innerHTML = fields.map(([k, v, key]) =>
+    '<div class="field ' + (key && changed(key) ? 'changed' : '') + '">' +
+    '<span class="k">' + k + '</span><span class="v">' + v + '</span></div>'
+  ).join('');
+
+  const surface = $('aidSurface');
+  if (state.showAid) {
+    const text = {
+      hint: '【提示】高亮一个被证明安全的格子（证据：旁边那个 1 已经找齐雷了）。只给结论，不解释。',
+      smart: '【智能提示】“因为左下角的 1 旁边只有这一个未知格，所以它是雷；右边这个 2 的两个未知格里已有一个雷，所以另一个一定安全。”——展示技巧与涉及的格子。',
+      leader: '【领航】用同一批证明，自动执行下一步确定操作。学习者在旁边看它怎么走。',
+    }[state.showAid];
+    surface.innerHTML = '<div class="aid">' + text +
+      ' &nbsp;<span class="legend">（原因：' + TrainingAid.reasonLabel(state.aidReason) + '）</span></div>';
+  } else if (state.lastEvent.indexOf('先试一次门') === 0) {
+    surface.innerHTML = '<div class="aid blocked">先试一次门：连续求助被挡下了。先自己走一步，再回来求助。</div>';
+  } else if (state.nudge) {
+    surface.innerHTML = '<div class="aid nudge">「帮帮我」按钮在轻轻呼吸，等你来点。系统不会替你走。</div>';
+  } else {
+    surface.innerHTML = '';
+  }
+
+  $('ruleNote').textContent = '最近事件：' + state.lastEvent +
+    (state.mode === 'challenge' ? '　·　规则：计时挑战无辅助，触雷判负。' : '　·　规则：训练对局可辅助，触雷自动复活。');
+
+  lastFrame = { ...state };
+}
+
+function dispatch(action) {
+  state = TrainingAid.reduce(state, action);
+  render();
+  updateSteps();
+}
+
+function buildFreeButtons() {
+  const defs = [
+    ['独立揭格成功', { type: 'REVEAL_OK' }, true],
+    ['误点', { type: 'MISCLICK' }, false],
+    ['触雷', { type: 'HIT_MINE' }, false],
+    ['卡住', { type: 'STUCK' }, false],
+    ['等 1 秒', { type: 'TICK' }, false],
+    ['帮帮我', { type: 'HELP' }, true],
+    ['关掉辅助', { type: 'DISMISS' }, false],
+    ['胜利', { type: 'WIN' }, true],
+    ['放弃', { type: 'FORFEIT' }, false],
+    ['新局', { type: 'NEW_GAME' }, false],
+    ['切换轻推开关', { type: 'TOGGLE_NUDGE' }, false],
+    ['进入训练对局', { type: 'SET_MODE', value: 'training' }, false],
+    ['进入计时挑战', { type: 'SET_MODE', value: 'challenge' }, false],
+  ];
+  const box = $('freeButtons');
+  box.innerHTML = '';
+  defs.forEach(([label, action, primary]) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    if (primary) b.className = 'primary';
+    b.onclick = () => dispatch(action);
+    box.appendChild(b);
+  });
+}
+
+function buildTabs() {
+  const tabs = $('tabs');
+  tabs.innerHTML = '';
+  SCENARIOS.forEach((s, i) => {
+    const b = document.createElement('button');
+    b.className = 'tab' + (i === activeScenario ? ' active' : '');
+    b.textContent = s.title;
+    b.onclick = () => startScenario(i);
+    tabs.appendChild(b);
+  });
+}
+
+function startScenario(i) {
+  activeScenario = i;
+  stepIndex = 0;
+  state = SCENARIOS[i].reset();
+  render();
+  buildTabs();
+  renderScenario();
+}
+
+function renderScenario() {
+  const s = SCENARIOS[activeScenario];
+  $('scenarioDesc').textContent = s.desc;
+  const ol = $('steps');
+  ol.innerHTML = '';
+  s.steps.forEach((step, i) => {
+    const li = document.createElement('li');
+    if (i < stepIndex) li.className = 'done';
+    else if (i === stepIndex) li.className = 'current';
+    const b = document.createElement('button');
+    b.textContent = (i + 1) + '. ' + step.label;
+    b.disabled = i !== stepIndex;
+    b.onclick = () => {
+      const times = step.times || 1;
+      for (let t = 0; t < times; t++) state = TrainingAid.reduce(state, { type: step.type, value: step.value });
+      stepIndex += 1;
+      render();
+      updateSteps();
+    };
+    li.appendChild(b);
+    ol.appendChild(li);
+  });
+}
+
+function updateSteps() {
+  renderScenario();
+}
+
+render();
+buildFreeButtons();
+startScenario(0);
+</script>
+</body>
+</html>

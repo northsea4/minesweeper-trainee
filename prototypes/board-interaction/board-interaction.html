@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE · 棋盘交互与误点恢复</title>
+<style>
+  :root { --accent:#2f6fed; --ink:#14181f; --muted:#5b6472; --line:#e2e6ec; --bg:#f7f8fa; --panel:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"PingFang SC","Segoe UI",system-ui,sans-serif; color:var(--ink); background:var(--bg); line-height:1.6; font-size:15px; }
+  .wrap { max-width:1000px; margin:0 auto; padding:28px 20px 80px; }
+  .proto-banner { background:#fff4d6; border:1px solid #f0d38a; color:#7a5b00; padding:8px 12px; border-radius:8px; font-size:13px; margin-bottom:20px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  .q { color:var(--muted); margin:0 0 8px; max-width:820px; }
+  .assume { color:var(--accent); font-size:13px; margin:0 0 22px; }
+  h2 { font-size:16px; margin:26px 0 10px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .two { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:18px; align-items:start; }
+  .state-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:6px 20px; }
+  .field { display:flex; justify-content:space-between; gap:12px; border-bottom:1px dashed var(--line); padding:5px 0; }
+  .field .k { color:var(--muted); } .field .v { font-weight:600; text-align:right; }
+  .field.changed .v { color:var(--accent); }
+  .board { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .cell { position:relative; aspect-ratio:1/1; border:1px solid var(--line); border-radius:10px; background:#fff; display:flex; align-items:center; justify-content:center; font-weight:600; color:var(--muted); }
+  .cell.hover { border-color:#b9c6da; background:#f2f6fc; }
+  .cell.press { border-color:#8a3a3a; background:#fdeeee; color:#8a3a3a; }
+  .cell.target { border-color:var(--accent); box-shadow:inset 0 0 0 3px var(--accent); color:var(--accent); }
+  .cell.revive { border-color:#e0a800; background:#fff8e1; color:#8a6d00; }
+  .finger { position:absolute; right:6px; bottom:6px; width:14px; height:14px; border-radius:50%; background:#8a3a3a; opacity:.85; }
+  .badge { position:absolute; left:50%; top:-10px; transform:translate(-50%,-100%); background:var(--accent); color:#fff; font-size:11px; padding:2px 7px; border-radius:999px; white-space:nowrap; }
+  .notice { margin-top:14px; padding:11px 13px; border-radius:10px; border:1px dashed var(--accent); background:#eef3ff; font-size:14px; min-height:44px; }
+  .notice.revive { border-style:solid; border-color:#e0a800; background:#fff8e1; color:#8a6d00; }
+  .legend { color:var(--muted); font-size:13px; }
+  button { font:inherit; cursor:pointer; border-radius:8px; border:1px solid var(--line); background:#fff; padding:7px 12px; color:var(--ink); }
+  button:hover { border-color:var(--accent); color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary:hover { opacity:.92; color:#fff; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; }
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .tab { border:1px solid var(--line); background:#fff; padding:6px 11px; border-radius:999px; font-size:13px; }
+  .tab.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .scenario-desc { color:var(--muted); margin:4px 0 14px; }
+  .steps { list-style:none; padding:0; margin:0; }
+  .steps li { margin:6px 0; }
+  .steps li.done button { border-color:#cfe0ff; color:var(--accent); }
+  .steps li.current button { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .hint-text { color:var(--muted); font-size:13px; }
+  .rule { color:var(--muted); font-size:13px; border-left:2px solid var(--line); padding-left:10px; margin-top:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="proto-banner"><strong>PROTOTYPE</strong> — 一次性产物，用于回答「原型化桌面与移动棋盘交互及误点恢复」，不是生产代码。</div>
+
+  <h1>棋盘交互与误点恢复</h1>
+  <p class="q">
+    桌面与移动环境中的揭格、标记、和弦、缩放、平移、<strong>目标反馈</strong>与<strong>取消手势</strong>应如何配合，
+    <strong>自动复活</strong>又应如何反馈与恢复——才能缓解<strong>误点</strong>，又不牺牲连续操作速度？
+  </p>
+  <p class="assume">假定：这是行为/手势状态模型（LOGIC 分支），不是“长什么样”的布局探索。棋盘用按钮驱动一个手势状态机。</p>
+
+  <h2>当前状态</h2>
+  <div class="card">
+    <div class="two">
+      <div>
+        <div class="state-grid" id="stateGrid"></div>
+        <div class="notice" id="notice"></div>
+        <p class="rule" id="ruleNote"></p>
+      </div>
+      <div>
+        <div class="board" id="board"></div>
+        <p class="legend" style="margin-top:10px">
+          棋盘格含义：<strong>A / B</strong>＝安全格，<strong>M</strong>＝雷，其余为普通格。
+          红点＝手指按住的格；蓝圈＝当前<strong>目标格</strong>（触屏时高亮/气泡会偏移到手指上方，避免被手指遮挡）。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <h2>自由操作</h2>
+  <div class="card">
+    <div class="row" id="freeButtons"></div>
+    <p class="hint-text" style="margin-top:12px">
+      任意顺序点。观察：松手确认模式下“按下→拖开→松手”是否真的取消；长按是否只标记不揭格；第二指是否取消当前瞄准；
+      立即生效模式下误点是否已无法挽回（只能靠自动复活）。
+    </p>
+  </div>
+
+  <h2>引导式走查</h2>
+  <div class="card">
+    <div class="tabs" id="tabs"></div>
+    <div class="scenario-desc" id="scenarioDesc"></div>
+    <ol class="steps" id="steps"></ol>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+ * 纯逻辑模块（可整块搬进真实代码库；不含 DOM）
+ * 题目：手势如何映射到动作、误点如何被缓解、自动复活如何反馈
+ * 形态：一个 reducer (state, action) => state
+ * =======================================================================*/
+
+const BoardInteraction = (() => {
+  function initial() {
+    return {
+      device: 'touch',     // touch | mouse
+      commit: 'release',   // release（松手确认，可取消） | down（按下即生效，快）
+      phase: 'idle',       // idle | aiming | zooming | revive
+      pressCell: null,     // 手指按住的格
+      target: null,        // 当前目标格（触屏时反馈偏移到手指上方）
+      moved: false,        // 是否已偏离原格
+      hover: null,         // 鼠标悬停预览格
+      reviveCell: null,
+      lastEvent: '就绪',
+    };
+  }
+
+  function reduce(s0, a) {
+    const s = { ...s0 };
+    switch (a.type) {
+      case 'SET_DEVICE':
+        s.device = a.value; s.phase = 'idle'; s.pressCell = null; s.target = null; s.hover = null;
+        s.lastEvent = a.value === 'touch' ? '切换为触屏：点击/长按/拖动/双指' : '切换为桌面：悬停/左键/右键/双键';
+        break;
+
+      case 'SET_COMMIT':
+        s.commit = a.value;
+        s.lastEvent = a.value === 'release'
+          ? '揭格改为「松手确认」：可拖开取消，缓解误点'
+          : '揭格改为「按下即生效」：最快，但无法取消';
+        break;
+
+      case 'DOWN':                                  // 单指/左键按下
+        if (s.phase === 'aiming') {                 // 已有手指按住 → 这是第二指
+          s.phase = 'zooming'; s.target = null; s.pressCell = null; s.moved = false;
+          s.lastEvent = '第二指按下 → 取消当前瞄准，进入缩放/平移';
+          break;
+        }
+        s.pressCell = a.cell; s.target = a.cell; s.moved = false;
+        if (s.commit === 'down') {
+          s.phase = 'idle';
+          s.lastEvent = '按下即揭格 ' + a.cell + '（无取消余地——若本意是别处，只能靠自动复活）';
+        } else {
+          s.phase = 'aiming';
+          s.lastEvent = '按住 ' + a.cell + ' → 瞄准中；目标反馈偏移到手指上方';
+        }
+        break;
+
+      case 'MOVE':
+        if (s.device === 'mouse' && s.phase === 'idle') {   // 悬停预览
+          s.hover = a.cell; s.lastEvent = '悬停 ' + a.cell + '（预览目标，按下前就能看清）';
+          break;
+        }
+        if (s.phase === 'aiming') {
+          if (a.cell !== s.pressCell) { s.moved = true; s.target = a.cell; s.lastEvent = '偏离原格 → 松手将取消，不会揭格'; }
+          else { s.moved = false; s.target = a.cell; s.lastEvent = '回到原格 → 松手才会揭格'; }
+        }
+        break;
+
+      case 'UP':
+        if (s.phase !== 'aiming') { s.lastEvent = '松手（当前没有瞄准中的手势）'; break; }
+        if (s.moved) s.lastEvent = '松手 → 取消：误点被挡下，未揭开任何格';
+        else s.lastEvent = '松手 → 揭格 ' + s.target;
+        s.phase = 'idle'; s.pressCell = null; s.target = null; s.moved = false;
+        break;
+
+      case 'LONG_PRESS':
+        if (s.phase === 'aiming' && !s.moved) {
+          s.lastEvent = '长按 → 标记 ' + s.pressCell + '（只标记，不揭格）';
+          s.phase = 'idle'; s.pressCell = null; s.target = null;
+        } else {
+          s.lastEvent = '长按无效：需按住且未偏离';
+        }
+        break;
+
+      case 'RIGHT':
+        s.lastEvent = '右键 → 标记 ' + a.cell + '（桌面）';
+        break;
+
+      case 'CHORD':
+        s.lastEvent = '双键 / 中键 → 和弦 ' + a.cell + '；如周围标记有误会触雷';
+        break;
+
+      case 'HIT_MINE':
+        s.phase = 'revive'; s.reviveCell = a.cell; s.pressCell = null; s.target = null;
+        s.lastEvent = '触雷 ' + a.cell + ' → 冻结画面 → 标出该格 → 自动恢复到动作前 → 计时不中断（训练对局）';
+        break;
+
+      case 'CONTINUE':
+        s.phase = 'idle'; s.reviveCell = null;
+        s.lastEvent = '已恢复，继续对局';
+        break;
+
+      default: break;
+    }
+    return s;
+  }
+
+  return { initial, reduce };
+})();
+
+
+/* =========================================================================
+ * 一次性页面外壳：薄，只负责画状态、画棋盘、把按钮接进 reducer。
+ * =======================================================================*/
+
+const CELLS = ['A', 'B', 'C', 'D', 'E', 'F', 'M', 'G', 'H', 'I', 'J', 'K'];
+
+const SCENARIOS = [
+  {
+    id: 'release', title: '① 触屏 · 松手确认（可取消）',
+    desc: '默认触屏策略：按住先瞄准，目标反馈偏移到手指上方；手指拖离原格后松手＝取消，不揭任何格。看：这能挡下多少误点，代价是什么。',
+    reset: () => Object.assign(BoardInteraction.initial(), { device: 'touch', commit: 'release' }),
+    steps: [
+      { label: '按住 格 A（瞄准）', type: 'DOWN', cell: 'A' },
+      { label: '手指滑到 格 B', type: 'MOVE', cell: 'B' },
+      { label: '松手', type: 'UP' },
+      { label: '这次按住 A 后直接松手', type: 'DOWN', cell: 'A' },
+      { label: '松手', type: 'UP' },
+    ],
+  },
+  {
+    id: 'longpress', title: '② 触屏 · 长按标记（不误揭）',
+    desc: '需要插旗时用长按，绝不触发揭格。看：长按与“按住后直接松手揭格”是否互不干扰。',
+    reset: () => Object.assign(BoardInteraction.initial(), { device: 'touch', commit: 'release' }),
+    steps: [
+      { label: '按住 格 C', type: 'DOWN', cell: 'C' },
+      { label: '保持 400ms（长按）', type: 'LONG_PRESS' },
+      { label: '再按住 格 E', type: 'DOWN', cell: 'E' },
+      { label: '松手揭格 E', type: 'UP' },
+    ],
+  },
+  {
+    id: 'immediate', title: '③ 触屏 · 立即生效的危险',
+    desc: '把触屏改成“按下即生效”。速度快，但没有取消余地：一旦按错格，只能靠（训练对局的）自动复活兜底。看：这个速度/安全取舍值不值。',
+    reset: () => Object.assign(BoardInteraction.initial(), { device: 'touch', commit: 'release' }),
+    steps: [
+      { label: '切换为「按下即生效」', type: 'SET_COMMIT', value: 'down' },
+      { label: '按下 雷格 M（本意是别处）', type: 'DOWN', cell: 'M' },
+      { label: '自动复活反馈', type: 'HIT_MINE', cell: 'M' },
+      { label: '继续', type: 'CONTINUE' },
+    ],
+  },
+  {
+    id: 'zoompinch', title: '④ 双指缩放与揭格冲突',
+    desc: '正在瞄准时第二指点下。看：当前瞄准是否立即取消并进入缩放/平移，避免“单指揭格”和“双指缩放”互相打架。',
+    reset: () => Object.assign(BoardInteraction.initial(), { device: 'touch', commit: 'release' }),
+    steps: [
+      { label: '按住 格 C（瞄准）', type: 'DOWN', cell: 'C' },
+      { label: '第二指按下', type: 'DOWN', cell: 'H' },
+      { label: '松手（两指）', type: 'UP' },
+    ],
+  },
+  {
+    id: 'desktop', title: '⑤ 桌面 · 悬停预览 / 右键 / 和弦',
+    desc: '桌面同样默认「松手确认」：悬停即可预览目标，左键按下瞄准、松手揭格，右键标记，双键/中键和弦。看：悬停预览 + 松手确认是否已把误点风险降到很低。',
+    reset: () => Object.assign(BoardInteraction.initial(), { device: 'touch', commit: 'release' }),
+    steps: [
+      { label: '切换到桌面', type: 'SET_DEVICE', value: 'mouse' },
+      { label: '悬停 格 A（预览）', type: 'MOVE', cell: 'A' },
+      { label: '左键按住 格 A', type: 'DOWN', cell: 'A' },
+      { label: '松手揭格 A', type: 'UP' },
+      { label: '右键 格 B（标记）', type: 'RIGHT', cell: 'B' },
+      { label: '双键中心 格 F（和弦）', type: 'CHORD', cell: 'F' },
+    ],
+  },
+  {
+    id: 'revive', title: '⑥ 自动复活：反馈与恢复',
+    desc: '训练对局触雷。看：冻结画面 → 标出误点格 → 恢复到动作前 → 计时不中断。反馈要“看得见但不打断”，恢复要无感衔接。',
+    reset: () => Object.assign(BoardInteraction.initial(), { device: 'touch', commit: 'release' }),
+    steps: [
+      { label: '按住 雷格 M', type: 'DOWN', cell: 'M' },
+      { label: '触雷', type: 'HIT_MINE', cell: 'M' },
+      { label: '继续', type: 'CONTINUE' },
+    ],
+  },
+];
+
+let state = BoardInteraction.initial();
+let activeScenario = 0;
+let stepIndex = 0;
+let lastFrame = null;
+
+const $ = (id) => document.getElementById(id);
+const changed = (k) => lastFrame && state[k] !== lastFrame[k];
+
+function render() {
+  const fields = [
+    ['设备', state.device === 'touch' ? '触屏' : '桌面', 'device'],
+    ['揭格回应（设置）', state.commit === 'release' ? '松手确认（默认）' : '按下即生效（已改）', 'commit'],
+    ['手势阶段', ({ idle:'空闲', aiming:'瞄准中', zooming:'缩放/平移', revive:'自动复活' })[state.phase], 'phase'],
+    ['按住格', state.pressCell || '—', 'pressCell'],
+    ['目标格', state.target || '—', 'target'],
+    ['是否偏离', state.moved ? '是' : '否', 'moved'],
+    ['悬停格', state.hover || '—', 'hover'],
+    ['复活格', state.reviveCell || '—', 'reviveCell'],
+  ];
+  $('stateGrid').innerHTML = fields.map(([k, v, key]) =>
+    '<div class="field ' + (key && changed(key) ? 'changed' : '') + '">' +
+    '<span class="k">' + k + '</span><span class="v">' + v + '</span></div>').join('');
+
+  const bd = $('board');
+  bd.innerHTML = '';
+  CELLS.forEach((c) => {
+    const d = document.createElement('div');
+    d.className = 'cell';
+    d.textContent = c;
+    if (state.hover === c) d.classList.add('hover');
+    if (state.pressCell === c) { d.classList.add('press'); d.insertAdjacentHTML('beforeend', '<span class="finger"></span>'); }
+    if (state.target === c && state.phase === 'aiming') {
+      d.classList.add('target');
+      d.insertAdjacentHTML('beforeend', '<span class="badge">目标</span>');
+    }
+    if (state.reviveCell === c) d.classList.add('revive');
+    bd.appendChild(d);
+  });
+
+  const n = $('notice');
+  n.textContent = state.lastEvent;
+  n.className = 'notice' + (state.phase === 'revive' ? ' revive' : '');
+
+  $('ruleNote').textContent = '触屏：点击揭格 / 长按标记 / 拖动平移 / 捏合缩放；桌面：悬停预览 / 左键揭格 / 右键标记 / 双键和弦。训练对局触雷自动复活。';
+  lastFrame = { ...state };
+}
+
+function dispatch(action) { state = BoardInteraction.reduce(state, action); render(); updateSteps(); }
+
+function buildFreeButtons() {
+  const defs = [
+    ['按住 A', { type: 'DOWN', cell: 'A' }, true],
+    ['按住 雷格 M', { type: 'DOWN', cell: 'M' }, false],
+    ['滑到 B', { type: 'MOVE', cell: 'B' }, false],
+    ['回到 A', { type: 'MOVE', cell: 'A' }, false],
+    ['松手', { type: 'UP' }, true],
+    ['长按', { type: 'LONG_PRESS' }, false],
+    ['悬停 A', { type: 'MOVE', cell: 'A' }, false],
+    ['右键 B', { type: 'RIGHT', cell: 'B' }, false],
+    ['双键和弦 F', { type: 'CHORD', cell: 'F' }, false],
+    ['触雷 M', { type: 'HIT_MINE', cell: 'M' }, false],
+    ['继续', { type: 'CONTINUE' }, false],
+    ['切换 触屏/桌面', { type: 'SET_DEVICE', value: 'mouse' }, false],
+    ['切换 立即/松手确认', { type: 'SET_COMMIT', value: 'down' }, false],
+  ];
+  const box = $('freeButtons'); box.innerHTML = '';
+  defs.forEach(([label, action, primary]) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    if (primary) b.className = 'primary';
+    b.onclick = () => {
+      // 切换按钮：按当前值反转
+      let act = action;
+      if (action.type === 'SET_DEVICE') act = { type: 'SET_DEVICE', value: state.device === 'touch' ? 'mouse' : 'touch' };
+      if (action.type === 'SET_COMMIT') act = { type: 'SET_COMMIT', value: state.commit === 'release' ? 'down' : 'release' };
+      dispatch(act);
+    };
+    box.appendChild(b);
+  });
+}
+
+function buildTabs() {
+  const tabs = $('tabs'); tabs.innerHTML = '';
+  SCENARIOS.forEach((s, i) => {
+    const b = document.createElement('button');
+    b.className = 'tab' + (i === activeScenario ? ' active' : '');
+    b.textContent = s.title;
+    b.onclick = () => startScenario(i);
+    tabs.appendChild(b);
+  });
+}
+
+function startScenario(i) {
+  activeScenario = i; stepIndex = 0; state = SCENARIOS[i].reset();
+  render(); buildTabs(); renderScenario();
+}
+
+function renderScenario() {
+  const s = SCENARIOS[activeScenario];
+  $('scenarioDesc').textContent = s.desc;
+  const ol = $('steps'); ol.innerHTML = '';
+  s.steps.forEach((step, i) => {
+    const li = document.createElement('li');
+    if (i < stepIndex) li.className = 'done';
+    else if (i === stepIndex) li.className = 'current';
+    const b = document.createElement('button');
+    b.textContent = (i + 1) + '. ' + step.label;
+    b.disabled = i !== stepIndex;
+    b.onclick = () => {
+      state = BoardInteraction.reduce(state, { type: step.type, cell: step.cell, value: step.value });
+      stepIndex += 1; render(); updateSteps();
+    };
+    li.appendChild(b); ol.appendChild(li);
+  });
+}
+
+function updateSteps() { renderScenario(); }
+
+render();
+buildFreeButtons();
+startScenario(0);
+</script>
+</body>
+</html>
