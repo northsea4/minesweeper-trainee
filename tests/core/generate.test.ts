@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { neighborsOf } from "../../src/core/board.ts";
 import { replayCertificate } from "../../src/core/certificate.ts";
 import { generateNoGuess, validatePreset } from "../../src/core/generator.ts";
+import { PRESETS } from "../../src/core/presets.ts";
 
 const BEGINNER = { width: 9, height: 9, mines: 10 };
 
@@ -54,6 +55,18 @@ describe("no-guess generation", () => {
       expect(a.certificate.steps).toEqual(b.certificate.steps);
     }
   });
+
+  it("generates every built-in preset with its size-scaled budget", () => {
+    for (const preset of PRESETS) {
+      const config = { width: preset.width, height: preset.height, mines: preset.mines };
+      const firstIndex = Math.floor((config.width * config.height) / 2);
+      for (const seed of [1, 2]) {
+        const result = generateNoGuess({ config, seed, firstIndex });
+        expect(result.ok, `${preset.id} seed=${seed}`).toBe(true);
+        if (result.ok) expect(replayCertificate(result.board, result.certificate).ok).toBe(true);
+      }
+    }
+  }, 30_000);
 
   it("matches the golden vector", () => {
     const result = generateNoGuess({ config: BEGINNER, seed: 42, firstIndex: 40 });

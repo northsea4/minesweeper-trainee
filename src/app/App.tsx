@@ -383,7 +383,11 @@ export function App({
           </div>
         )}
       </div>
-      {pending && <div class="pending" data-testid="pending">生成无猜棋盘…</div>}
+      {pending && (
+        <div class="pending" data-testid="pending">
+          正在生成无猜棋盘…（较大棋盘可能需要几秒）
+        </div>
+      )}
 
       {mode === "training" && (
         <div class="aids" data-testid="aids">

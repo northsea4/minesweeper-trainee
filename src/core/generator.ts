@@ -68,6 +68,18 @@ export const DEFAULT_BUDGET: GenerateBudget = {
   maxSteps: 5000,
 };
 
+const LARGE_BUDGET: GenerateBudget = {
+  maxCandidates: 1000,
+  maxRepairsPerCandidate: 30,
+  deadlineMs: 8000,
+  maxSteps: 20000,
+};
+
+/** Larger boards need more candidates to certify; budget scales with area. */
+export function budgetFor(config: BoardConfig): GenerateBudget {
+  return config.width * config.height > 256 ? LARGE_BUDGET : DEFAULT_BUDGET;
+}
+
 export type GenerateFailure =
   | "invalid-preset"
   | "budget-exhausted"
@@ -111,7 +123,7 @@ export function generateNoGuess(
     return { ok: false, reason: "invalid-preset" };
   }
 
-  const budget: GenerateBudget = { ...DEFAULT_BUDGET, ...request.budget };
+  const budget: GenerateBudget = { ...budgetFor(config), ...request.budget };
   const deadline = Date.now() + budget.deadlineMs;
   const rng = makeRng(seed);
   const protectedSet = new Set([firstIndex, ...neighborsOf(firstIndex, config)]);

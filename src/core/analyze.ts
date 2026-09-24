@@ -129,6 +129,12 @@ export function analyze(input: AnalyzeInput): AnalyzeResult {
     record(unknown, "mine", globalProof(unknown, remainingGlobal, "mine"));
   }
 
+  if (!contradiction && conclusions.size === 0 && constraints.length > 0) {
+    for (const forced of enumerateFrontier(constraints)) {
+      record(forced.cells, forced.kind, forced.proof);
+    }
+  }
+
   const deductions: Deduction[] = [];
   for (const [index, { kind, proof }] of conclusions) {
     deductions.push({ action: kind === "safe" ? "reveal" : "mark-mine", index, proof });
@@ -144,6 +150,170 @@ export function analyze(input: AnalyzeInput): AnalyzeResult {
       ? "progress"
       : "needs-guess";
   return { status, deductions, frontier: [...frontier] };
+}
+
+const MAX_ENUM_CELLS = 22;
+const ENUM_NODE_BUDGET = 5_000_000;
+
+interface ComponentResult {
+  counts: Int32Array;
+  models: number;
+  nodes: number;
+  contradiction: boolean;
+}
+
+function modelProof(
+  clueCells: number[],
+  inputSets: Array<{ cells: number[]; mines: number }>,
+  cells: number[],
+  kind: "safe" | "mine",
+): DeductionProof {
+  return {
+    technique: "model-contradiction",
+    clueCells,
+    inputSets,
+    conclusion: { cells: [...cells], kind },
+    policyVersion: POLICY_VERSION,
+  };
+}
+
+/** Bounded exact enumeration of the frontier components when the local rules stall. */
+function enumerateFrontier(
+  constraints: Constraint[],
+): Array<{ cells: number[]; kind: "safe" | "mine"; proof: DeductionProof }> {
+  const byCell = new Map<number, number[]>();
+  constraints.forEach((constraint, index) => {
+    for (const cell of constraint.cells) {
+      const list = byCell.get(cell);
+      if (list) list.push(index);
+      else byCell.set(cell, [index]);
+    }
+  });
+
+  const seen = new Set<number>();
+  const results: Array<{ cells: number[]; kind: "safe" | "mine"; proof: DeductionProof }> = [];
+  let budget = ENUM_NODE_BUDGET;
+
+  for (let start = 0; start < constraints.length; start++) {
+    if (seen.has(start)) continue;
+    const members = new Set<number>();
+    const cellSet = new Set<number>();
+    const stack = [start];
+    seen.add(start);
+    while (stack.length > 0) {
+      const index = stack.pop()!;
+      members.add(index);
+      for (const cell of constraints[index].cells) {
+        cellSet.add(cell);
+        for (const neighbour of byCell.get(cell)!) {
+          if (!seen.has(neighbour)) {
+            seen.add(neighbour);
+            stack.push(neighbour);
+          }
+        }
+      }
+    }
+    const cells = [...cellSet];
+    if (cells.length > MAX_ENUM_CELLS) continue;
+
+    const component = enumerateComponent(cells, constraints, members, budget);
+    if (component === null) continue;
+    budget -= component.nodes;
+    if (component.models === 0) continue;
+
+    const clueCells = [...members].map((index) => constraints[index].clue);
+    const inputSets = [...members].map((index) => ({
+      cells: [...constraints[index].cells],
+      mines: constraints[index].remaining,
+    }));
+    const safe: number[] = [];
+    const mine: number[] = [];
+    for (let i = 0; i < cells.length; i++) {
+      if (component.counts[i] === 0) safe.push(cells[i]);
+      else if (component.counts[i] === component.models) mine.push(cells[i]);
+    }
+    if (safe.length > 0) {
+      results.push({ cells: safe, kind: "safe", proof: modelProof(clueCells, inputSets, safe, "safe") });
+    }
+    if (mine.length > 0) {
+      results.push({ cells: mine, kind: "mine", proof: modelProof(clueCells, inputSets, mine, "mine") });
+    }
+    if (budget <= 0) break;
+  }
+  return results;
+}
+
+function enumerateComponent(
+  cells: number[],
+  constraints: Constraint[],
+  members: Set<number>,
+  nodeBudget: number,
+): ComponentResult | null {
+  if (nodeBudget <= 0) return null;
+  const indexOf = new Map<number, number>();
+  cells.forEach((cell, index) => indexOf.set(cell, index));
+  const active = constraints.map((constraint, index) => ({ constraint, index })).filter(
+    (entry) => members.has(entry.index),
+  );
+  const touching: Array<Array<{ mines: number; sum: number; count: number; cells: number[] }>> =
+    cells.map(() => []);
+  const sets = active.map(({ constraint }) => {
+    const set = {
+      mines: constraint.remaining,
+      sum: 0,
+      count: 0,
+      cells: constraint.cells.map((cell) => indexOf.get(cell)!),
+    };
+    return set;
+  });
+  for (const set of sets) {
+    for (const cellIndex of set.cells) {
+      touching[cellIndex].push(set);
+    }
+  }
+
+  const counts = new Int32Array(cells.length);
+  const assigned = new Int8Array(cells.length).fill(-1);
+  let models = 0;
+  let nodes = 0;
+  let aborted = false;
+
+  const dfs = (i: number): void => {
+    if (aborted) return;
+    nodes++;
+    if (nodes > nodeBudget) {
+      aborted = true;
+      return;
+    }
+    if (i === cells.length) {
+      models++;
+      for (let k = 0; k < cells.length; k++) if (assigned[k] === 1) counts[k]++;
+      return;
+    }
+    for (const value of [0, 1]) {
+      let ok = true;
+      for (const set of touching[i]) {
+        if (value === 1) set.sum++;
+        set.count++;
+        if (set.sum > set.mines || set.sum + (set.cells.length - set.count) < set.mines) {
+          ok = false;
+        }
+      }
+      if (ok) {
+        assigned[i] = value;
+        dfs(i + 1);
+        assigned[i] = -1;
+      }
+      for (const set of touching[i]) {
+        if (value === 1) set.sum--;
+        set.count--;
+      }
+      if (aborted) return;
+    }
+  };
+  dfs(0);
+  if (aborted) return null;
+  return { counts, models, nodes, contradiction: models === 0 };
 }
 
 function combineConstraints(

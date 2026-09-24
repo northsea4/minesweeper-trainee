@@ -7,13 +7,28 @@
 | 指标 | 预算 | 自动化 |
 | --- | --- | --- |
 | 默认预设首局生成 p95 / p99 | ≤ 300ms / ≤ 800ms | `tests/perf/perf.test.ts` |
-| 极端预设生成 p95（超预算显式失败） | ≤ 2s（+1 个在途校验步） | `tests/perf/perf.test.ts` |
+| 内置大棋盘生成（高级 30×16/99） | ≤ 8s，全成功 | `tests/core/generate.test.ts` |
+| 极端自定义预设生成 p95（超预算显式失败） | ≤ 2s（+1 个在途校验步） | `tests/perf/perf.test.ts` |
 | 揭格 reducer p95 | < 16ms（60fps 一帧） | `tests/perf/perf.test.ts` |
 | 存档序列化 p95 | < 50ms | `tests/perf/perf.test.ts` |
 | 输入 → 视觉反馈 p95 | ≤ 100ms | `tests/e2e/perf.spec.ts` |
 | 暂停 / 恢复 | ≤ 100ms | `tests/e2e/perf.spec.ts` |
 
 运行：`pnpm test`（含内核与 perf）、`pnpm e2e`（含交互延迟）。CI 建议单独跑 `vitest run tests/perf` 作为回归。
+
+## 生成预算按面积分层
+
+`budgetFor(config)`：面积 ≤ 256 用 2s / 200 候选；面积 > 256 用 8s / 1000 候选（`deadlineMs` 跨校验步强制生效，超预算返回 `budget-exhausted` 并可重试）。
+
+求解器在直接规则之外增加了 **`model-contradiction`**：当单格 / 集合差 / 重叠 / 全局计数都停滞时，对前沿连通分量做有界精确枚举（≤22 格、500 万节点预算），取所有一致模型下恒为雷 / 恒安全的格。这是把精确推理作为**有界回退**，而非静默降级。
+
+### 实测：内置预设（默认预算，10–12 个 seed）
+
+| 预设 | 成功率 | p50 | p95 |
+| --- | --- | --- | --- |
+| 初级 9×9/10 | 10/10 | 4ms | 9ms |
+| 中级 16×16/40 | 10/10 | 118ms | 173ms |
+| 高级 30×16/99 | 12/12 | 884ms | 2382ms |
 
 ## 实测：9×9 各雷数生成（8 个 seed，预算 2s）
 
