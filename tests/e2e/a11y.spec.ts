@@ -1,9 +1,12 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { waitForPlaying } from "./support.ts";
 
 test("start screen has no serious accessibility violations", async ({ page }) => {
   await page.goto("/?w=9&h=9&m=10&seed=42");
   await page.locator(".cell").first().click();
+  await waitForPlaying(page);
+  await page.getByTestId("settings").locator("summary").click();
 
   const results = await new AxeBuilder({ page }).analyze();
   const serious = results.violations.filter(

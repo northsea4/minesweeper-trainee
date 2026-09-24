@@ -1,14 +1,25 @@
 export type RevealMode = "release" | "press";
+export type ThemeChoice = "system" | "light" | "dark";
 
 export interface Settings {
   revealMode: RevealMode;
+  theme: ThemeChoice;
+  sound: boolean;
+  haptics: boolean;
+  numberDots: boolean;
 }
 
 const STORAGE_KEY = "minesweeper-trainee.settings";
 
 export const DEFAULT_SETTINGS: Settings = {
   revealMode: "release",
+  theme: "system",
+  sound: true,
+  haptics: true,
+  numberDots: true,
 };
+
+type Listener = () => void;
 
 function readStorage(): Partial<Settings> | null {
   if (typeof localStorage === "undefined") return null;
@@ -20,14 +31,22 @@ function readStorage(): Partial<Settings> | null {
   }
 }
 
+function coerce(stored: Partial<Settings> | null): Settings {
+  return {
+    revealMode: stored?.revealMode === "press" ? "press" : DEFAULT_SETTINGS.revealMode,
+    theme:
+      stored?.theme === "light" || stored?.theme === "dark" ? stored.theme : "system",
+    sound: stored?.sound === false ? false : DEFAULT_SETTINGS.sound,
+    haptics: stored?.haptics === false ? false : DEFAULT_SETTINGS.haptics,
+    numberDots: stored?.numberDots === false ? false : DEFAULT_SETTINGS.numberDots,
+  };
+}
+
 export class SettingsStore {
   private settings: Settings;
 
-  constructor(private listeners = new Set<() => void>()) {
-    const stored = readStorage();
-    this.settings = {
-      revealMode: stored?.revealMode === "press" ? "press" : DEFAULT_SETTINGS.revealMode,
-    };
+  constructor(private listeners: Set<Listener> = new Set()) {
+    this.settings = coerce(readStorage());
   }
 
   get(): Settings {
@@ -46,7 +65,7 @@ export class SettingsStore {
     for (const listener of this.listeners) listener();
   }
 
-  subscribe(listener: () => void): () => void {
+  subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }

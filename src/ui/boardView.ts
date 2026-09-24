@@ -10,6 +10,7 @@ export interface BoardCallbacks {
 export interface BoardOptions {
   getRevealMode: () => RevealMode;
   isLocked: () => boolean;
+  showNumberDots?: () => boolean;
 }
 
 interface Aim {
@@ -115,6 +116,13 @@ export class BoardView {
         } else if (event.key === " " || event.key === "Enter") {
           event.preventDefault();
           this.callbacks.onReveal(index);
+        } else if (ARROW_KEYS[event.key]) {
+          const [dx, dy] = ARROW_KEYS[event.key];
+          const nx = (index % state.config.width) + dx;
+          const ny = Math.floor(index / state.config.width) + dy;
+          if (nx < 0 || ny < 0 || nx >= state.config.width || ny >= state.config.height) return;
+          event.preventDefault();
+          this.cells[ny * state.config.width + nx]?.focus();
         }
       });
       this.cells.push(cell);
@@ -137,7 +145,13 @@ export class BoardView {
     cell.classList.toggle("cell--boom", state.reviewIndex === index);
     for (let n = 1; n <= 8; n++) {
       cell.classList.toggle(`cell--n${n}`, mark === "revealed" && adjacent === n);
+      cell.classList.toggle(
+        `cell--d${n}`,
+        mark === "revealed" && adjacent === n && (this.options.showNumberDots?.() ?? true),
+      );
     }
+    const dots = this.options.showNumberDots?.() ?? true;
+    cell.classList.toggle("cell--dots", mark === "revealed" && adjacent > 0 && dots);
 
     let text = "";
     if (mark === "flagged") text = "🚩";
@@ -346,6 +360,13 @@ export class BoardView {
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+
+const ARROW_KEYS: Record<string, [number, number]> = {
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+};
 
 function describe(mark: string, showMine: boolean, adjacent: number): string {
   if (showMine) return "地雷";

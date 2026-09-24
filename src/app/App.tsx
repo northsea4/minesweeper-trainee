@@ -4,7 +4,8 @@ import { DEFAULT_PRESET, PRESETS } from "../core/presets.ts";
 import { boardKey, isPlayable, remainingMines } from "../core/rules.ts";
 import type { BoardConfig, BoardKey, GameAction, GameMode, GameState } from "../core/types.ts";
 import { BoardView } from "../ui/boardView.ts";
-import { settings, type RevealMode } from "./settings.ts";
+import { Sensory } from "./sensory.ts";
+import { settings, type RevealMode, type ThemeChoice } from "./settings.ts";
 import { Store } from "./store.ts";
 import { WorkerSolver } from "../worker/solverClient.ts";
 
@@ -82,6 +83,12 @@ const REVEAL_MODE_LABELS: Record<RevealMode, string> = {
   press: "按下即生效",
 };
 
+const THEME_LABELS: Record<ThemeChoice, string> = {
+  system: "跟随系统",
+  light: "浅色",
+  dark: "深色",
+};
+
 export function App({
   config,
   seed,
@@ -94,37 +101,66 @@ export function App({
   onNewGame: (config: BoardConfig, mode: GameMode) => void;
 }) {
   const solver = useRef(new WorkerSolver()).current;
+  const sensory = useRef(new Sensory(settings)).current;
   const [store] = useState(() => new Store(config, seed ?? randomSeed(), mode, solver));
   const boardHost = useRef<HTMLDivElement>(null);
+  const lastStatus = useRef(store.getState().status);
   const [, forceRender] = useState(0);
 
-  useEffect(() => () => solver.dispose(), [solver]);
+  useEffect(() => {
+    const disarm = sensory.armOnFirstGesture();
+    return () => {
+      disarm();
+      solver.dispose();
+    };
+  }, [solver, sensory]);
+
+  useEffect(() => applyTheme(settings), []);
 
   const view = useMemo(
     () =>
       new BoardView(
         {
-          onReveal: (index) => store.dispatch({ type: "reveal", index }),
-          onFlag: (index) => store.dispatch({ type: "toggleFlag", index }),
-          onChord: (index) => store.dispatch({ type: "chord", index }),
+          onReveal: (index) => {
+            sensory.cue("reveal");
+            store.dispatch({ type: "reveal", index });
+          },
+          onFlag: (index) => {
+            sensory.cue("flag");
+            store.dispatch({ type: "toggleFlag", index });
+          },
+          onChord: (index) => {
+            sensory.cue("chord");
+            store.dispatch({ type: "chord", index });
+          },
         },
         {
           getRevealMode: () => settings.get().revealMode,
           isLocked: () =>
             store.isFrozen() || store.isPending() || !isPlayable(store.getState()),
+          showNumberDots: () => settings.get().numberDots,
         },
       ),
-    [store],
+    [store, sensory],
   );
 
   useEffect(() => {
     if (boardHost.current) view.mount(boardHost.current);
     view.render(store.getState());
     const unsubscribe = store.subscribe(() => {
+      const snapshot = store.getState();
+      if (snapshot.status !== lastStatus.current) {
+        if (snapshot.status === "won") sensory.cue("win");
+        else if (snapshot.status === "lost") sensory.cue("lose");
+        lastStatus.current = snapshot.status;
+      }
+      view.render(snapshot);
+      forceRender((n) => n + 1);
+    });
+    const unsubscribeSettings = settings.subscribe(() => {
       view.render(store.getState());
       forceRender((n) => n + 1);
     });
-    const unsubscribeSettings = settings.subscribe(() => forceRender((n) => n + 1));
     const timer = window.setInterval(() => {
       if (isPlayable(store.getState())) forceRender((n) => n + 1);
     }, 250);
@@ -149,10 +185,10 @@ export function App({
       store.dispose();
       view.destroy();
     };
-  }, [store, view]);
+  }, [store, view, sensory]);
 
   const state = store.getState();
-  const revealMode = settings.get().revealMode;
+  const { revealMode, theme, sound, haptics, numberDots } = settings.get();
   const pending = store.isPending();
   const error = store.getError();
   const paused = state.status === "paused";
@@ -174,6 +210,8 @@ export function App({
           <span class="statusbar__value">{statusText(state, pending)}</span>
         </div>
       </header>
+
+      <div class="hintbar" data-testid="hintbar" aria-live="polite" />
 
       {error && (
         <div class="banner banner--error" data-testid="error" role="alert">
@@ -251,14 +289,69 @@ export function App({
         >
           放弃
         </button>
-        <button
-          type="button"
-          class="controls__new"
-          onClick={() => onNewGame(config, mode)}
-        >
+        <button type="button" class="controls__new" onClick={() => onNewGame(config, mode)}>
           新游戏
         </button>
       </div>
+
+      <details class="settings" data-testid="settings">
+        <summary>设置</summary>
+        <div class="settings__grid">
+          <label class="settings__row">
+            <span>主题</span>
+            <select
+              data-testid="theme"
+              value={theme}
+              onChange={(event) =>
+                settings.set({ theme: event.currentTarget.value as ThemeChoice })
+              }
+            >
+              {(Object.keys(THEME_LABELS) as ThemeChoice[]).map((choice) => (
+                <option value={choice} key={choice}>
+                  {THEME_LABELS[choice]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label class="settings__row">
+            <span>声音</span>
+            <input
+              type="checkbox"
+              data-testid="sound"
+              checked={sound}
+              onChange={(event) => settings.set({ sound: event.currentTarget.checked })}
+            />
+          </label>
+          <label class="settings__row">
+            <span>触觉</span>
+            <input
+              type="checkbox"
+              data-testid="haptics"
+              checked={haptics}
+              onChange={(event) => settings.set({ haptics: event.currentTarget.checked })}
+            />
+          </label>
+          <label class="settings__row">
+            <span>数字点数</span>
+            <input
+              type="checkbox"
+              data-testid="dots"
+              checked={numberDots}
+              onChange={(event) => settings.set({ numberDots: event.currentTarget.checked })}
+            />
+          </label>
+        </div>
+      </details>
     </main>
   );
+}
+
+function applyTheme(store: typeof settings): () => void {
+  const apply = () => {
+    const choice = store.get().theme;
+    if (choice === "system") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = choice;
+  };
+  apply();
+  return store.subscribe(apply);
 }
