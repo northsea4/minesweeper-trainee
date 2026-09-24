@@ -118,10 +118,10 @@ export function App({
   mode: GameMode;
   onNewGame: (config: BoardConfig, mode: GameMode) => void;
 }) {
-  const solver = useRef(new WorkerSolver()).current;
-  const sensory = useRef(new Sensory(settings)).current;
-  const history = useRef(new HistoryStore()).current;
-  const persistence = useRef(new PersistenceStore()).current;
+  const solver = useSingleton(() => new WorkerSolver());
+  const sensory = useSingleton(() => new Sensory(settings));
+  const history = useSingleton(() => new HistoryStore());
+  const persistence = useSingleton(() => new PersistenceStore());
   const [store, setStore] = useState(() => new Store(config, seed ?? randomSeed(), mode, solver));
   const boardHost = useRef<HTMLDivElement>(null);
   const lastStatus = useRef(store.getState().status);
@@ -698,6 +698,12 @@ function aidMessage(aid: AidState | null): string {
     return aid.conflict ? `${presentation.text} ${CONFLICT_TEXT}` : presentation.text;
   }
   return aid.conflict ? CONFLICT_TEXT : NO_AID_TEXT;
+}
+
+function useSingleton<T>(factory: () => T): T {
+  const ref = useRef<T | null>(null);
+  if (ref.current === null) ref.current = factory();
+  return ref.current;
 }
 
 function download(name: string, text: string): void {

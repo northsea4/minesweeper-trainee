@@ -6,6 +6,9 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(process.env.GITHUB_SHA ?? "dev"),
   },
+  server: {
+    port: 15701,
+  },
   plugins: [
     preact(),
     VitePWA({
