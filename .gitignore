@@ -34,3 +34,9 @@ dist-ssr
 .claude/settings.local.json
 
 .codegraph/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
