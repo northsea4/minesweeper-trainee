@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE · 响应式布局与感官反馈</title>
+<style>
+  :root { --ink:#14181f; --muted:#5b6472; --line:#e2e6ec; --bg:#eef1f5; --panel:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"PingFang SC","Segoe UI",system-ui,sans-serif; color:var(--ink); background:var(--bg); line-height:1.6; font-size:15px; }
+  .wrap { max-width:1180px; margin:0 auto; padding:24px 20px 120px; }
+  .proto-banner { background:#fff4d6; border:1px solid #f0d38a; color:#7a5b00; padding:8px 12px; border-radius:8px; font-size:13px; margin-bottom:16px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  .q { color:var(--muted); margin:0 0 6px; max-width:860px; }
+  .assume { color:#2f6fed; font-size:13px; margin:0 0 16px; }
+  .vpbar { display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+  .vpbar span { color:var(--muted); font-size:13px; }
+  .seg button, .segb { font:inherit; cursor:pointer; border:1px solid var(--line); background:#fff; padding:5px 11px; border-radius:999px; font-size:13px; }
+  .seg button.active { background:#2f6fed; border-color:#2f6fed; color:#fff; }
+
+  .stage { margin:0 auto; transition:max-width .15s; }
+  .stage.desktop { max-width:1100px; }
+  .stage.tablet { max-width:820px; }
+  .stage.phone { max-width:380px; }
+
+  /* ---- shared pieces ---- */
+  #app { --accent:#2f6fed; --panel2:#fff; --num1:#2f6fed; --num2:#2e7d32; --num3:#c62828;
+    background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  #app.theme-dark { background:#161a20; color:#e8ecf2; --panel2:#1e242d; --line:#2c3440; --muted:#9aa6b5;
+    --num1:#7aa7ff; --num2:#7bd88f; --num3:#ff8a8a; }
+  .status { display:flex; gap:14px; justify-content:space-between; align-items:center; font-variant-numeric:tabular-nums; }
+  .status .m { font-weight:700; }
+  .status .badge { font-size:12px; padding:2px 8px; border-radius:999px; background:#eef3ff; color:#2f6fed; }
+  .theme-dark .status .badge { background:#243247; color:#9cc0ff; }
+  .board { display:grid; grid-template-columns:repeat(9,1fr); gap:3px; }
+  .cell { aspect-ratio:1/1; border-radius:6px; border:1px solid var(--line); display:flex; flex-direction:column; align-items:center; justify-content:center; font-weight:700; font-size:13px; background:var(--panel2); }
+  .cell.hidden { background:linear-gradient(0deg,#e8ecf2,#f4f6f9); }
+  .theme-dark .cell.hidden { background:linear-gradient(0deg,#232a34,#2b333f); }
+  .num.n1 { color:var(--num1); } .num.n2 { color:var(--num2); } .num.n3 { color:var(--num3); } .num.n4,.num.n5,.num.n6,.num.n7,.num.n8 { color:#6b3fa0; }
+  .dots { font-size:5px; letter-spacing:1px; line-height:1; opacity:.75; }
+  .flag { width:0; height:0; border-left:7px solid #d9534f; border-top:5px solid transparent; border-bottom:5px solid transparent; }
+  .controls { display:flex; gap:8px; flex-wrap:wrap; }
+  .btn { font:inherit; font-size:13px; cursor:pointer; border:1px solid var(--line); background:var(--panel2); color:inherit; padding:8px 12px; border-radius:9px; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn.big { flex:1; padding:14px; font-size:16px; font-weight:700; }
+  .hint { border:1px dashed var(--accent); background:#eef3ff; border-radius:10px; padding:10px 12px; font-size:13px; }
+  .theme-dark .hint { background:#1b2534; }
+  .theme-dark .hint { border-color:#3f6fd8; }
+  .list { font-size:13px; }
+  .list .rowline { display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-bottom:1px dashed var(--line); }
+  .sec-title { font-size:12px; color:var(--muted); text-transform:none; margin:12px 0 4px; }
+  label.tog { display:flex; justify-content:space-between; align-items:center; font-size:13px; padding:4px 0; }
+  label.tog input { accent-color:var(--accent); }
+
+  /* ---- variant A: 经典居中 ---- */
+  .v-a { display:flex; flex-direction:column; gap:12px; align-items:stretch; }
+  .v-a .board { max-width:420px; width:100%; margin:0 auto; }
+  .v-a .controls { justify-content:center; }
+
+  /* ---- variant B: 侧栏 ---- */
+  .v-b { display:grid; grid-template-columns:1fr 260px; gap:16px; align-items:start; }
+  .v-b .side { border-left:1px solid var(--line); padding-left:16px; }
+  @media (max-width:640px){ .v-b { grid-template-columns:1fr; } .v-b .side { border-left:0; padding-left:0; border-top:1px solid var(--line); padding-top:12px; } }
+
+  /* ---- variant C: 沉浸全屏 ---- */
+  .v-c { position:relative; min-height:460px; padding:10px; }
+  .v-c .board { height:100%; }
+  .v-c .chrome-top { position:absolute; top:12px; left:12px; right:12px; display:flex; justify-content:space-between; }
+  .v-c .chrome-bottom { position:absolute; left:12px; right:12px; bottom:12px; display:flex; gap:8px; }
+  .v-c .pill { background:rgba(20,24,31,.82); color:#fff; border-radius:999px; padding:6px 12px; font-size:12px; font-variant-numeric:tabular-nums; }
+  .v-c .sheet { position:absolute; left:12px; right:12px; bottom:70px; background:var(--accent); color:#fff; border-radius:12px; padding:12px 14px; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,.25); }
+  .v-c .cell { border-width:2px; }
+  .v-c .num { text-decoration:underline; text-decoration-thickness:2px; text-underline-offset:2px; }
+
+  /* ---- floating switcher ---- */
+  .switcher { position:fixed; left:50%; bottom:16px; transform:translateX(-50%); display:flex; align-items:center; gap:10px;
+    background:#14181f; color:#fff; border-radius:999px; padding:8px 12px; box-shadow:0 6px 20px rgba(0,0,0,.28); font-size:13px; }
+  .switcher button { background:transparent; border:0; color:#fff; font-size:16px; cursor:pointer; padding:2px 8px; }
+  .switcher .label { min-width:150px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="proto-banner"><strong>PROTOTYPE</strong> — 一次性产物，用于回答「原型化响应式布局与感官反馈系统」，不是生产代码。</div>
+  <h1>响应式布局与感官反馈</h1>
+  <p class="q">棋盘、控制区、提示层、历史与设置在不同视口 / 缩放状态下如何布局；明暗主题、颜色、声音、动效、触觉与非颜色线索又如何共同服务快速扫读、低龄学习与可访问性。</p>
+  <p class="assume">UI 分支：3 个<strong>结构迥异</strong>的变体（非换色），用底部浮动栏或 ←/→ 切换（`?variant=`）。数字同时用颜色与点数（非颜色线索）；低龄目标尺寸更大。</p>
+
+  <div class="vpbar">
+    <span>视口模拟：</span>
+    <span class="seg">
+      <button data-vp="phone">手机</button>
+      <button data-vp="tablet">平板</button>
+      <button data-vp="desktop" class="active">桌面</button>
+    </span>
+    <span style="margin-left:8px">主题：</span>
+    <span class="seg"><button id="themeBtn">明 / 暗</button></span>
+  </div>
+
+  <div class="stage desktop" id="stage">
+    <div id="app" class="v-a"></div>
+  </div>
+</div>
+
+<div class="switcher" id="switcher">
+  <button id="prev">‹</button>
+  <span class="label" id="slabel">A · 经典居中</span>
+  <button id="next">›</button>
+</div>
+
+<script>
+/* 纯数据 + 共享组件（一次性外壳；变体只改布局/层级，不改数据） */
+const W = 9, H = 9;
+const mineSet = new Set(['0,0','8,8','4,5','5,4','2,6','6,2']);
+const revealed = new Set();
+for (let y = 0; y < 6; y++) for (let x = 0; x < 7; x++) revealed.add(x + ',' + y);
+const flags = new Set(['7,0','8,3']);
+function neigh(x, y) { let c = 0; for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){ if(!dx&&!dy) continue; if(mineSet.has((x+dx)+','+(y+dy))) c++; } return c; }
+
+function dots(n){ return '•'.repeat(n); }
+
+function boardHTML(extraClass) {
+  let h = '<div class="board ' + (extraClass||'') + '">';
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const key = x + ',' + y;
+    if (revealed.has(key)) {
+      const n = neigh(x, y);
+      h += '<div class="cell revealed">' + (n ? '<span class="num n'+n+'">'+n+'<span class="dots">'+dots(n)+'</span></span>' : '') + '</div>';
+    } else if (flags.has(key)) {
+      h += '<div class="cell"><span class="flag"></span></div>';
+    } else {
+      h += '<div class="cell hidden"></div>';
+    }
+  }
+  return h + '</div>';
+}
+function statusHTML(){ return '<div class="status"><span class="m">💣 10</span><span class="m">⏱ 00:42</span><span class="badge">训练对局</span></div>'; }
+function controlsHTML(big){ return '<div class="controls"><button class="btn'+(big?' big':'')+'">预设 · 初级</button><button class="btn'+(big?' big':'')+' primary">帮帮我</button><button class="btn'+(big?' big':'')+'">暂停</button></div>'; }
+function hintHTML(){ return '<div class="hint"><strong>智能提示</strong>：左下角的 1 旁边只有这一个未知格，所以它是雷；右边 2 的两个未知格里已有一个雷，另一个一定安全。</div>'; }
+function historyHTML(){ return '<div class="list"><div class="sec-title">最近对局</div>'+
+  '<div class="rowline"><span>初级 · 挑战</span><span>00:42 ✔</span></div>'+
+  '<div class="rowline"><span>初级 · 训练</span><span>01:08 · 不计排名</span></div>'+
+  '<div class="rowline"><span>自定义 A · 挑战</span><span>02:15 ✔</span></div></div>'; }
+function settingsHTML(){ return '<div class="list"><div class="sec-title">设置</div>'+
+  '<label class="tog">揭格回应<input type="checkbox" checked> 松手确认</label>'+
+  '<label class="tog">轻推<input type="checkbox" checked></label>'+
+  '<label class="tog">音效<input type="checkbox" checked></label>'+
+  '<label class="tog">减弱动效<input type="checkbox"></label>'+
+  '<label class="tog">触觉（Android）<input type="checkbox" checked></label></div>'; }
+
+const VARIANTS = {
+  A: { name: '经典居中', render: () => '<div class="v-a">' + statusHTML() + hintHTML() + boardHTML() + controlsHTML(false) +
+        '<div class="sec-title">历史与设置</div>' + historyHTML() + settingsHTML() + '</div>' },
+  B: { name: '侧栏', render: () => '<div class="v-b">' +
+        '<div><div class="v-b-top">' + statusHTML() + '</div><div style="margin-top:12px">' + boardHTML() + '</div><div style="margin-top:12px">' + controlsHTML(false) + '</div>' + hintHTML() + '</div>' +
+        '<div class="side">' + historyHTML() + settingsHTML() + '</div></div>' },
+  C: { name: '沉浸全屏', render: () => '<div class="v-c">' + boardHTML() +
+        '<div class="chrome-top"><span class="pill">💣 10</span><span class="pill">训练对局</span><span class="pill">⏱ 00:42</span></div>' +
+        '<div class="sheet"><strong>智能提示</strong>：这里只有这一个未知格相邻于 1，所以它是雷。点下方「帮帮我」看推理。</div>' +
+        '<div class="chrome-bottom"><button class="btn big">预设</button><button class="btn big primary">帮帮我</button><button class="btn big">暂停</button></div></div>' },
+};
+
+const ORDER = ['A', 'B', 'C'];
+const params = new URLSearchParams(location.search);
+let variant = (params.get('variant') || 'A').toUpperCase();
+if (!VARIANTS[variant]) variant = 'A';
+// 默认跟随系统主题（依据 #5 决议）
+let theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+const $ = (id) => document.getElementById(id);
+
+function render() {
+  $('app').className = 'v-' + variant.toLowerCase() + (theme === 'dark' ? ' theme-dark' : '');
+  $('app').innerHTML = VARIANTS[variant].render();
+  $('slabel').textContent = variant + ' · ' + VARIANTS[variant].name;
+}
+function setVariant(v) { variant = v; history.replaceState(null, '', '?variant=' + v); render(); }
+function cycle(dir) { const i = ORDER.indexOf(variant); setVariant(ORDER[(i + dir + ORDER.length) % ORDER.length]); }
+
+$('prev').onclick = () => cycle(-1);
+$('next').onclick = () => cycle(1);
+document.addEventListener('keydown', (e) => {
+  if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+  if (e.key === 'ArrowLeft') cycle(-1);
+  if (e.key === 'ArrowRight') cycle(1);
+});
+$('themeBtn').onclick = () => { theme = theme === 'light' ? 'dark' : 'light'; render(); };
+document.querySelectorAll('.seg button[data-vp]').forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll('.seg button').forEach((x) => x.classList.remove('active'));
+    b.classList.add('active');
+    $('stage').className = 'stage ' + b.dataset.vp;
+  };
+});
+render();
+</script>
+</body>
+</html>
