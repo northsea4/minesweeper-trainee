@@ -15,6 +15,7 @@ export class PersistenceStore {
   private save: SavedGame | null = null;
   private listeners = new Set<() => void>();
   private ready: Promise<void>;
+  private degraded = false;
 
   constructor() {
     this.ready = this.load();
@@ -30,6 +31,10 @@ export class PersistenceStore {
 
   getSave(): SavedGame | null {
     return this.save;
+  }
+
+  isDegraded(): boolean {
+    return this.degraded;
   }
 
   subscribe(listener: () => void): () => void {
@@ -109,6 +114,7 @@ export class PersistenceStore {
       for (const preset of this.presets) store.put(preset);
       await transactionDone(tx);
     } catch {
+      this.markDegraded();
       writeLocal(LS_PRESETS, this.presets);
     }
   }
@@ -126,8 +132,15 @@ export class PersistenceStore {
       else store.delete(SAVE_KEY);
       await transactionDone(tx);
     } catch {
+      this.markDegraded();
       writeLocal(LS_SAVE, this.save);
     }
+  }
+
+  private markDegraded(): void {
+    if (this.degraded) return;
+    this.degraded = true;
+    this.emit();
   }
 
   private loadFallback(): void {

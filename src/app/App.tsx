@@ -25,6 +25,7 @@ import { BoardView } from "../ui/boardView.ts";
 import { CONFLICT_TEXT, NO_AID_TEXT, presentAid } from "../ui/aidText.ts";
 import { HistoryStore } from "./history.ts";
 import { PersistenceStore } from "./persistence.ts";
+import { clearAllLocalData } from "./privacy.ts";
 import { Sensory } from "./sensory.ts";
 import { settings, type RevealMode, type ThemeChoice } from "./settings.ts";
 import { Store, type AidState } from "./store.ts";
@@ -331,6 +332,7 @@ export function App({
   const best = personalBest(records, config);
   const recent = recentFor(records, config, 20);
   const presets = persistence.listPresets();
+  const storageDegraded = persistence.isDegraded() || history.isDegraded();
 
   return (
     <main class="app">
@@ -357,6 +359,15 @@ export function App({
           <span>{ERROR_TEXT[error]}</span>
           <button type="button" onClick={() => startNewGame(config, mode)}>
             重试
+          </button>
+        </div>
+      )}
+
+      {storageDegraded && (
+        <div class="banner banner--warn" data-testid="storage-warning" role="status">
+          <span>本地存储空间不足，游戏仍可继续，建议导出数据或清理旧历史。</span>
+          <button type="button" onClick={() => exportData(false)}>
+            导出数据
           </button>
         </div>
       )}
@@ -640,6 +651,16 @@ export function App({
               onChange={(event) => settings.set({ nudgeEnabled: event.currentTarget.checked })}
             />
           </label>
+          <div class="settings__row">
+            <span>本地数据</span>
+            <button
+              type="button"
+              data-testid="clear-data"
+              onClick={() => void clearAllLocalData().then(() => window.location.reload())}
+            >
+              清空本地数据
+            </button>
+          </div>
         </div>
       </details>
     </main>

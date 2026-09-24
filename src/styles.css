@@ -146,6 +146,21 @@ body {
   color: var(--danger);
 }
 
+.banner--warn {
+  background: color-mix(in srgb, #b8860b 20%, transparent);
+  color: #7a5600;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .banner--warn {
+    color: #f0c674;
+  }
+}
+
+:root[data-theme="dark"] .banner--warn {
+  color: #f0c674;
+}
+
 .banner button {
   border: none;
   border-radius: 8px;

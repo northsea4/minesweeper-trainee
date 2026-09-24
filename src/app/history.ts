@@ -7,6 +7,7 @@ export class HistoryStore {
   private records: GameRecord[] = [];
   private listeners = new Set<() => void>();
   private ready: Promise<void>;
+  private degraded = false;
 
   constructor() {
     this.ready = this.load();
@@ -14,6 +15,10 @@ export class HistoryStore {
 
   whenReady(): Promise<void> {
     return this.ready;
+  }
+
+  isDegraded(): boolean {
+    return this.degraded;
   }
 
   list(): GameRecord[] {
@@ -82,7 +87,7 @@ export class HistoryStore {
         await transactionDone(tx);
         return;
       } catch {
-        void 0;
+        this.degraded = true;
       }
     }
     if (typeof localStorage !== "undefined") {

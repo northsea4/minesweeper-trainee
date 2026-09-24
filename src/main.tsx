@@ -1,9 +1,23 @@
 import { render } from "preact";
 import { useState } from "preact/hooks";
+import { registerSW } from "virtual:pwa-register";
 import { App } from "./app/App.tsx";
 import { DEFAULT_PRESET } from "./core/presets.ts";
 import type { BoardConfig, GameMode } from "./core/types.ts";
 import "./styles.css";
+
+registerSW({ immediate: true });
+if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    // Only reload when an existing shell is replaced by a newer one; the first
+    // install must not interrupt the running page.
+    if (!hadController || reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+}
 
 function configFromUrl(): BoardConfig {
   const params = new URLSearchParams(window.location.search);
