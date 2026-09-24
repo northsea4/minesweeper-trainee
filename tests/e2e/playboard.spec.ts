@@ -62,3 +62,17 @@ test("walking skeleton: start, reveal, flag, chord, win", async ({ page }) => {
   const restarted = await snapshot(page);
   expect(restarted.boardKey).not.toEqual(firstKey);
 });
+
+test("new game works on the default screen (no seed param)", async ({ page }) => {
+  await page.goto("/");
+  await cell(page, 40).click();
+  await waitForPlaying(page);
+  const before = await snapshot(page);
+
+  await page.getByRole("button", { name: "新游戏" }).click();
+  await expect(page.getByTestId("status")).toContainText("点第一格开始");
+  await cell(page, 40).click();
+  await waitForPlaying(page);
+  const after = await snapshot(page);
+  expect(after.boardKey).not.toEqual(before.boardKey);
+});

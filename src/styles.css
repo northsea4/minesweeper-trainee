@@ -251,7 +251,7 @@ body {
   line-height: 1;
   cursor: pointer;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   transition: background 80ms ease;
   user-select: none;

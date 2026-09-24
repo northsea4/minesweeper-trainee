@@ -36,12 +36,18 @@ const LONG_PRESS_MS = 450;
 const MOVE_THRESHOLD = 10;
 const MIN_SCALE = 0.6;
 const MAX_SCALE = 3;
+const MIN_CELL_SIZE = 16;
+const MAX_CELL_SIZE = 36;
+const CELL_GAP = 2;
 
 export class BoardView {
   readonly el: HTMLDivElement;
+  private host: HTMLElement | null = null;
+  private resizeObserver: ResizeObserver | null = null;
   private cells: HTMLButtonElement[] = [];
   private marker: HTMLDivElement;
   private renderWidth = 0;
+  private renderHeight = 0;
   private pointers = new Map<number, PointerRecord>();
   private aim: Aim | null = null;
   private pinch: { distance: number; scale: number; midX: number; midY: number; tx: number; ty: number } | null = null;
@@ -65,15 +71,36 @@ export class BoardView {
   }
 
   mount(host: HTMLElement): void {
+    this.host = host;
     host.replaceChildren(this.el);
+    if (typeof ResizeObserver !== "undefined") {
+      this.resizeObserver?.disconnect();
+      this.resizeObserver = new ResizeObserver(() => this.fitToHost());
+      this.resizeObserver.observe(host);
+    }
   }
 
   destroy(): void {
     this.clearAim();
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    this.host = null;
     this.el.removeEventListener("pointerdown", this.onPointerDown);
     window.removeEventListener("pointermove", this.onPointerMove);
     window.removeEventListener("pointerup", this.onPointerUp);
     window.removeEventListener("pointercancel", this.onPointerUp);
+  }
+
+  private fitToHost(): void {
+    if (!this.host || this.renderWidth === 0) return;
+    const cols = this.renderWidth;
+    const rows = this.renderHeight;
+    const available = Math.max(0, this.host.clientWidth - 8);
+    const heightBudget = Math.max(240, window.innerHeight * 0.6);
+    const byWidth = Math.floor((available - CELL_GAP * (cols - 1)) / cols);
+    const byHeight = Math.floor((heightBudget - CELL_GAP * (rows - 1)) / rows);
+    const size = clamp(Math.min(byWidth, byHeight), MIN_CELL_SIZE, MAX_CELL_SIZE);
+    this.el.style.setProperty("--cell-size", `${size}px`);
   }
 
   setHighlight(highlight: { cells: number[]; kind: "safe" | "mine"; target: number } | null): void {
@@ -88,6 +115,7 @@ export class BoardView {
     this.el.style.setProperty("--board-cols", String(width));
     this.el.style.setProperty("--board-rows", String(height));
     this.el.setAttribute("aria-label", `扫雷棋盘 ${width} × ${height}`);
+    this.fitToHost();
     for (let index = 0; index < this.cells.length; index++) {
       this.paint(this.cells[index], index, state);
     }
@@ -99,6 +127,7 @@ export class BoardView {
     this.el.replaceChildren();
     this.cells = [];
     this.renderWidth = state.config.width;
+    this.renderHeight = state.config.height;
     for (let index = 0; index < state.config.width * state.config.height; index++) {
       const cell = document.createElement("button");
       cell.type = "button";

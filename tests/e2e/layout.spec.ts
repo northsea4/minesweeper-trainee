@@ -46,3 +46,32 @@ test("layout survives a 360x640 viewport without clipping controls", async ({ pa
   const box = await board.boundingBox();
   expect(box!.width).toBeLessThanOrEqual(360);
 });
+
+test("a wide board fits its container without horizontal scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await page.goto("/?w=30&h=16&m=30&seed=1");
+  const board = page.getByTestId("board");
+  const overflow = await board.evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test("numbers stay vertically centred when the dot cue is off", async ({ page }) => {
+  await page.goto("/?w=9&h=9&m=10&seed=7");
+  await page.locator('.cell[data-index="40"]').click();
+  await waitForPlaying(page);
+  await page.getByTestId("settings").locator("summary").click();
+  await page.getByTestId("dots").uncheck();
+  await expect(page.locator(".cell--dots")).toHaveCount(0);
+  const offset = await page
+    .locator(".cell--n1")
+    .first()
+    .evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const text = range.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      return Math.abs(text.top + text.height / 2 - (box.top + box.height / 2));
+    });
+  expect(offset).toBeLessThan(4);
+});
+

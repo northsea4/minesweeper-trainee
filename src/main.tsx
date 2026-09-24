@@ -57,9 +57,10 @@ function Root() {
   const [config, setConfig] = useState(configFromUrl);
   const [seed, setSeed] = useState<number | undefined>(seedFromUrl);
   const [mode, setMode] = useState<GameMode>(modeFromUrl);
+  const [nonce, setNonce] = useState(0);
   return (
     <App
-      key={`${config.width}x${config.height}x${config.mines}:${seed ?? "random"}:${mode}`}
+      key={`${config.width}x${config.height}x${config.mines}:${seed ?? "random"}:${mode}:${nonce}`}
       config={config}
       seed={seed}
       mode={mode}
@@ -67,6 +68,7 @@ function Root() {
         setSeed(undefined);
         setConfig(nextConfig);
         setMode(nextMode);
+        setNonce((value) => value + 1);
       }}
     />
   );
