@@ -695,9 +695,7 @@ function aidMessage(aid: AidState | null): string {
   if (!aid) return "";
   if (aid.step) {
     const presentation = presentAid(aid.step, aid.kind !== "hint");
-    const prefix = aid.kind === "hint" ? `第 ${presentation.target + 1} 格：` : "";
-    const text = `${prefix}${presentation.text}`;
-    return aid.conflict ? `${text} ${CONFLICT_TEXT}` : text;
+    return aid.conflict ? `${presentation.text} ${CONFLICT_TEXT}` : presentation.text;
   }
   return aid.conflict ? CONFLICT_TEXT : NO_AID_TEXT;
 }

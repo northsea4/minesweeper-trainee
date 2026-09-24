@@ -311,9 +311,10 @@ body {
 .cell--dots.cell--d7::after { content: "•••••••"; }
 .cell--dots.cell--d8::after { content: "••••••••"; }
 
+/* Clue cell: referenced by the proof. Thin ring, keeps its number readable. */
 .cell--hl {
-  outline: 3px solid var(--accent);
-  outline-offset: -1px;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
   z-index: 1;
 }
 
@@ -321,10 +322,32 @@ body {
   outline-color: var(--danger);
 }
 
+/* Target cell: the one the hint is about. Filled and unmistakable. */
 .cell--hl-target {
-  outline-width: 4px;
-  outline-offset: 0;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
+  z-index: 2;
+  animation: target-pulse 1.2s ease-in-out infinite;
+}
+
+.cell--hl-target-safe {
+  outline: 3px solid #2e7d32;
+  outline-offset: -3px;
+  background: color-mix(in srgb, #2e7d32 30%, transparent);
+}
+
+.cell--hl-target-mine {
+  outline: 3px solid var(--danger);
+  outline-offset: -3px;
+  background: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+@keyframes target-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+  }
 }
 
 .aids {

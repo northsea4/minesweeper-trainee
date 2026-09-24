@@ -149,10 +149,13 @@ export class BoardView {
     cell.classList.toggle("cell--mine", showMine);
     cell.classList.toggle("cell--boom", state.reviewIndex === index);
     const highlighted = this.highlight?.cells.includes(index) ?? false;
+    const isTarget = this.highlight?.target === index;
+    const kind = this.highlight?.kind;
     cell.classList.toggle("cell--hl", highlighted);
-    cell.classList.toggle("cell--hl-safe", highlighted && this.highlight?.kind === "safe");
-    cell.classList.toggle("cell--hl-mine", highlighted && this.highlight?.kind === "mine");
-    cell.classList.toggle("cell--hl-target", this.highlight?.target === index);
+    cell.classList.toggle("cell--hl-mine", highlighted && kind === "mine");
+    cell.classList.toggle("cell--hl-target", isTarget);
+    cell.classList.toggle("cell--hl-target-safe", isTarget && kind === "safe");
+    cell.classList.toggle("cell--hl-target-mine", isTarget && kind === "mine");
     for (let n = 1; n <= 8; n++) {
       cell.classList.toggle(`cell--n${n}`, mark === "revealed" && adjacent === n);
       cell.classList.toggle(
