@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import type { GenerateFailure } from "../core/generator.ts";
 import { DEFAULT_PRESET, PRESETS } from "../core/presets.ts";
 import { boardKey, remainingMines } from "../core/rules.ts";
 import type { BoardConfig, BoardKey, GameAction, GameState } from "../core/types.ts";
 import { BoardView } from "../ui/boardView.ts";
 import { settings, type RevealMode } from "./settings.ts";
 import { type Mode, Store } from "./store.ts";
+import { WorkerSolver } from "../worker/solverClient.ts";
 
 export interface DebugApi {
   getState(): GameState;
@@ -16,6 +18,8 @@ export interface DebugApi {
     mode: Mode;
     reviveCount: number;
     frozen: boolean;
+    pending: boolean;
+    error: GenerateFailure | null;
   };
 }
 
@@ -48,7 +52,15 @@ function formatTime(ms: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function statusText(state: GameState): string {
+const ERROR_TEXT: Record<GenerateFailure, string> = {
+  "invalid-preset": "预设不合法，请调整后重试。",
+  "budget-exhausted": "这个预设暂时无法生成无猜棋盘，请重试。",
+  cancelled: "生成已取消。",
+  "internal-verification-error": "生成校验失败，请重试。",
+};
+
+function statusText(state: GameState, pending: boolean): string {
+  if (pending) return "生成中…";
   switch (state.status) {
     case "ready":
       return "点第一格开始";
@@ -77,9 +89,12 @@ export function App({
   mode?: Mode;
   onNewConfig: (config: BoardConfig) => void;
 }) {
-  const [store, setStore] = useState(() => new Store(config, seed ?? randomSeed(), mode));
+  const solver = useRef(new WorkerSolver()).current;
+  const [store, setStore] = useState(() => new Store(config, seed ?? randomSeed(), mode, solver));
   const boardHost = useRef<HTMLDivElement>(null);
   const [, forceRender] = useState(0);
+
+  useEffect(() => () => solver.dispose(), [solver]);
 
   const view = useMemo(
     () =>
@@ -91,7 +106,11 @@ export function App({
         },
         {
           getRevealMode: () => settings.get().revealMode,
-          isLocked: () => store.isFrozen() || store.getState().status === "won" || store.getState().status === "lost",
+          isLocked: () =>
+            store.isFrozen() ||
+            store.isPending() ||
+            store.getState().status === "won" ||
+            store.getState().status === "lost",
         },
       ),
     [store],
@@ -118,6 +137,8 @@ export function App({
         mode: store.getMode(),
         reviveCount: store.getReviveCount(),
         frozen: store.isFrozen(),
+        pending: store.isPending(),
+        error: store.getError(),
       }),
     };
     return () => {
@@ -131,6 +152,11 @@ export function App({
 
   const state = store.getState();
   const revealMode = settings.get().revealMode;
+  const pending = store.isPending();
+  const error = store.getError();
+
+  const startNew = (nextConfig: BoardConfig) =>
+    setStore(new Store(nextConfig, randomSeed(), mode, solver));
 
   return (
     <main class="app">
@@ -144,11 +170,21 @@ export function App({
           <span class="statusbar__value">{formatTime(store.getElapsedMs())}</span>
         </div>
         <div class="statusbar__item" data-testid="status">
-          <span class="statusbar__value">{statusText(state)}</span>
+          <span class="statusbar__value">{statusText(state, pending)}</span>
         </div>
       </header>
 
+      {error && (
+        <div class="banner banner--error" data-testid="error" role="alert">
+          <span>{ERROR_TEXT[error]}</span>
+          <button type="button" onClick={() => startNew(config)}>
+            重试
+          </button>
+        </div>
+      )}
+
       <div class="board-host" ref={boardHost} data-testid="board" />
+      {pending && <div class="pending" data-testid="pending">生成无猜棋盘…</div>}
 
       <div class="controls">
         <select
@@ -176,11 +212,7 @@ export function App({
         >
           {REVEAL_MODE_LABELS[revealMode]}
         </button>
-        <button
-          type="button"
-          class="controls__new"
-          onClick={() => setStore(new Store(config, randomSeed(), mode))}
-        >
+        <button type="button" class="controls__new" onClick={() => startNew(config)}>
           新游戏
         </button>
       </div>

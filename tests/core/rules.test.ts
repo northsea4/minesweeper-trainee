@@ -6,6 +6,7 @@ import {
   reduce,
   remainingMines,
 } from "../../src/core/rules.ts";
+import { generateBoard } from "../../src/core/generator.ts";
 import type { Board, BoardConfig, Cell } from "../../src/core/types.ts";
 
 function mkBoard(width: number, height: number, mineIndices: number[]): Board {
@@ -38,13 +39,17 @@ function fresh(): ReturnType<typeof newGameWithBoard> {
 }
 
 describe("reveal", () => {
-  it("is a no-op before the board exists except for the first reveal", () => {
-    const state = newGame(CONFIG, 1);
-    expect(state.status).toBe("ready");
-    const next = reduce(state, { type: "reveal", index: 12 });
-    expect(next.status).toBe("playing");
-    expect(next.board).not.toBeNull();
-    expect(next.firstIndex).toBe(12);
+  it("becomes playable only after a certified board is started", () => {
+    const ready = newGame(CONFIG, 1);
+    expect(ready.status).toBe("ready");
+    const ignored = reduce(ready, { type: "reveal", index: 12 });
+    expect(ignored.status).toBe("ready");
+    const board = generateBoard(CONFIG, 1, 12);
+    const started = reduce(ready, { type: "start", board, firstIndex: 12 });
+    expect(started.status).toBe("playing");
+    expect(started.board).not.toBeNull();
+    expect(started.firstIndex).toBe(12);
+    expect(reduce(started, { type: "reveal", index: 12 }).marks[12]).toBe("revealed");
   });
 
   it("reveals a numbered cell but does not expand", () => {
@@ -151,13 +156,23 @@ describe("chord", () => {
 
 describe("restart", () => {
   it("starts a fresh ready game with a new seed and board key", () => {
-    const first = reduce(newGame(CONFIG, 1), { type: "reveal", index: 3 });
-    const keyBefore = boardKey(first);
-    const restarted = reduce(first, { type: "restart" });
+    const started = reduce(newGame(CONFIG, 1), {
+      type: "start",
+      board: generateBoard(CONFIG, 1, 3),
+      firstIndex: 3,
+    });
+    const playing = reduce(started, { type: "reveal", index: 3 });
+    const keyBefore = boardKey(playing);
+    const restarted = reduce(playing, { type: "restart" });
     expect(restarted.status).toBe("ready");
-    expect(restarted.seed).not.toBe(first.seed);
+    expect(restarted.seed).not.toBe(playing.seed);
     expect(boardKey(restarted)).toBeNull();
-    const reRevealed = reduce(restarted, { type: "reveal", index: 3 });
+    const replayStarted = reduce(restarted, {
+      type: "start",
+      board: generateBoard(CONFIG, restarted.seed, 3),
+      firstIndex: 3,
+    });
+    const reRevealed = reduce(replayStarted, { type: "reveal", index: 3 });
     expect(boardKey(reRevealed)).not.toEqual(keyBefore);
   });
 
@@ -168,13 +183,19 @@ describe("restart", () => {
 });
 
 describe("board key", () => {
-  it("is null until the first reveal and stable afterwards", () => {
+  it("is null until the board starts and stable afterwards", () => {
     const ready = newGame(CONFIG, 5);
     expect(boardKey(ready)).toBeNull();
-    const playing = reduce(ready, { type: "reveal", index: 3 });
+    const started = reduce(ready, {
+      type: "start",
+      board: generateBoard(CONFIG, 5, 3),
+      firstIndex: 3,
+    });
+    const playing = reduce(started, { type: "reveal", index: 3 });
     const key = boardKey(playing)!;
     expect(key.seed).toBe(5);
     expect(key.firstIndex).toBe(3);
+    expect(key.policyVersion).toBeGreaterThan(0);
     expect(key).toEqual(boardKey(reduce(playing, { type: "toggleFlag", index: 0 })));
   });
 });

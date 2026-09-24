@@ -1,5 +1,6 @@
 export const ALGORITHM_VERSION = 1;
 export const PRNG_VERSION = 1;
+export const POLICY_VERSION = 1;
 
 export type CellMark = "hidden" | "flagged" | "revealed";
 
@@ -11,6 +12,7 @@ export interface BoardConfig {
 
 export interface BoardKey {
   algorithmVersion: number;
+  policyVersion: number;
   prngVersion: number;
   seed: number;
   width: number;
@@ -46,6 +48,7 @@ export interface GameState {
 }
 
 export type GameAction =
+  | { type: "start"; board: Board; firstIndex: number; seed?: number }
   | { type: "reveal"; index: number }
   | { type: "toggleFlag"; index: number }
   | { type: "chord"; index: number }

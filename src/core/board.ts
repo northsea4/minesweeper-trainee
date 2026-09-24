@@ -35,3 +35,33 @@ export function emptyBoard(config: BoardConfig): Board {
     cells: Array.from({ length: config.width * config.height }, () => ({ mine: false, adjacent: 0 })),
   };
 }
+
+export interface CompactBoard {
+  width: number;
+  height: number;
+  mines: number;
+  mine: Uint8Array;
+  adjacent: Uint8Array;
+}
+
+export function toCompact(board: Board): CompactBoard {
+  const mine = new Uint8Array(board.cells.length);
+  const adjacent = new Uint8Array(board.cells.length);
+  for (let index = 0; index < board.cells.length; index++) {
+    mine[index] = board.cells[index].mine ? 1 : 0;
+    adjacent[index] = board.cells[index].adjacent;
+  }
+  return { width: board.width, height: board.height, mines: board.mines, mine, adjacent };
+}
+
+export function fromCompact(compact: CompactBoard): Board {
+  return {
+    width: compact.width,
+    height: compact.height,
+    mines: compact.mines,
+    cells: Array.from({ length: compact.mine.length }, (_, index) => ({
+      mine: compact.mine[index] === 1,
+      adjacent: compact.adjacent[index],
+    })),
+  };
+}

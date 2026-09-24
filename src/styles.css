@@ -168,6 +168,34 @@ body {
 .cell--n7 { color: var(--n7); }
 .cell--n8 { color: var(--n8); }
 
+.banner {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.banner--error {
+  background: #ffe0e0;
+  color: #7a1c1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .banner--error {
+    background: #4a1f1f;
+    color: #ffd0d0;
+  }
+}
+
+.pending {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
 .controls {
   display: flex;
   gap: 12px;

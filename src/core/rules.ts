@@ -1,8 +1,8 @@
 import { neighborsOf } from "./board.ts";
-import { generateBoard } from "./generator.ts";
 import { PRNG_VERSION } from "./rng.ts";
 import {
   ALGORITHM_VERSION,
+  POLICY_VERSION,
   type Board,
   type BoardConfig,
   type BoardKey,
@@ -53,6 +53,7 @@ export function boardKey(state: GameState): BoardKey | null {
   if (state.firstIndex === null || state.board === null) return null;
   return {
     algorithmVersion: ALGORITHM_VERSION,
+    policyVersion: POLICY_VERSION,
     prngVersion: PRNG_VERSION,
     seed: state.seed,
     width: state.config.width,
@@ -110,11 +111,17 @@ function reveal(state: GameState, index: number): GameState {
   if (index < 0 || index >= state.marks.length) return state;
   if (state.marks[index] === "flagged") return state;
   if (state.status === "ready") {
-    const board = generateBoard(state.config, state.seed, index);
-    const withBoard: GameState = { ...state, board, firstIndex: index, status: "playing" };
-    return applyReveal(withBoard, index);
+    if (state.board === null) return state;
+    return applyReveal({ ...state, status: "playing" }, index);
   }
   return applyReveal(state, index);
+}
+
+function start(state: GameState, board: Board, firstIndex: number, seed?: number): GameState {
+  if (state.status !== "ready") return state;
+  if (state.board !== null) return state;
+  if (firstIndex < 0 || firstIndex >= state.marks.length) return state;
+  return { ...state, board, firstIndex, seed: seed ?? state.seed, status: "playing" };
 }
 
 function toggleFlag(state: GameState, index: number): GameState {
@@ -156,6 +163,8 @@ export function reduce(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case "restart":
       return newGame(state.config, action.seed ?? nextSeed(state.seed));
+    case "start":
+      return start(state, action.board, action.firstIndex, action.seed);
     case "reveal":
       return reveal(state, action.index);
     case "toggleFlag":

@@ -1,42 +1,5 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
-
-function cell(page: Page, index: number): Locator {
-  return page.locator(`.cell[data-index="${index}"]`);
-}
-
-async function snapshot(page: Page) {
-  return page.evaluate(() => {
-    const api = window.__ms;
-    if (!api) throw new Error("debug api missing");
-    return api.snapshot();
-  });
-}
-
-async function center(page: Page, index: number): Promise<{ x: number; y: number }> {
-  const box = await cell(page, index).boundingBox();
-  if (!box) throw new Error("cell not visible");
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-}
-
-async function dispatchPointer(
-  page: Page,
-  index: number,
-  type: string,
-  pointerId: number,
-): Promise<void> {
-  const { x, y } = await center(page, index);
-  await cell(page, index).dispatchEvent(type, {
-    pointerId,
-    pointerType: "touch",
-    isPrimary: pointerId === 1,
-    clientX: x,
-    clientY: y,
-    button: 0,
-    buttons: type === "pointerdown" ? 1 : 0,
-    bubbles: true,
-    cancelable: true,
-  });
-}
+import { expect, test } from "@playwright/test";
+import { cell, center, dispatchPointer, neighbors, snapshot, waitForPlaying } from "./support.ts";
 
 test("release mode cancels a reveal when the pointer leaves the cell", async ({ page }) => {
   await page.goto("/?w=9&h=9&m=10&seed=7");
@@ -58,9 +21,8 @@ test("press mode reveals on pointer down", async ({ page }) => {
   const target = await center(page, 40);
   await page.mouse.move(target.x, target.y);
   await page.mouse.down();
-  const snap = await snapshot(page);
-  expect(snap.state.status).toBe("playing");
   await page.mouse.up();
+  await waitForPlaying(page);
 });
 
 test("touch long press flags instead of revealing", async ({ page }) => {
@@ -87,6 +49,7 @@ test("a second finger cancels the current aim", async ({ page }) => {
 test("desktop right-click flags and middle-click chords", async ({ page }) => {
   await page.goto("/?w=9&h=9&m=10&seed=7");
   await cell(page, 40).click();
+  await waitForPlaying(page);
   const before = await snapshot(page);
   const board = before.state.board!;
   const number = board.cells.findIndex((c, i) => {
@@ -108,6 +71,7 @@ test("desktop right-click flags and middle-click chords", async ({ page }) => {
 test("training mode revives after hitting a mine without losing the timer", async ({ page }) => {
   await page.goto("/?w=9&h=9&m=10&seed=7");
   await cell(page, 40).click();
+  await waitForPlaying(page);
   const started = await snapshot(page);
   const mines = started.state.board!.cells
     .map((c, index) => (c.mine ? index : -1))
@@ -130,19 +94,3 @@ test("training mode revives after hitting a mine without losing the timer", asyn
   expect(settled.frozen).toBe(false);
   expect(settled.state.reviewIndex).toBeNull();
 });
-
-function neighbors(index: number, width = 9, height = 9): number[] {
-  const x = index % width;
-  const y = Math.floor(index / width);
-  const out: number[] = [];
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      if (dx === 0 && dy === 0) continue;
-      const nx = x + dx;
-      const ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-      out.push(ny * width + nx);
-    }
-  }
-  return out;
-}

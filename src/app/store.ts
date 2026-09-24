@@ -1,5 +1,7 @@
+import type { GenerateFailure, GenerateRequest } from "../core/generator.ts";
 import { newGame, reduce } from "../core/rules.ts";
 import type { BoardConfig, GameAction, GameState } from "../core/types.ts";
+import { inlineSolver, type Solver } from "../worker/solverClient.ts";
 
 export type Mode = "training" | "challenge";
 
@@ -15,11 +17,14 @@ export class Store {
   private frozen = false;
   private reviveCount = 0;
   private freezeTimer: number | null = null;
+  private pending = false;
+  private error: GenerateFailure | null = null;
 
   constructor(
     config: BoardConfig,
     seed: number,
     private mode: Mode = "training",
+    private solver: Solver = inlineSolver,
     private now: ElapsedSource = () => Date.now(),
   ) {
     this.state = newGame(config, seed);
@@ -41,6 +46,14 @@ export class Store {
     return this.frozen;
   }
 
+  isPending(): boolean {
+    return this.pending;
+  }
+
+  getError(): GenerateFailure | null {
+    return this.error;
+  }
+
   getElapsedMs(): number {
     if (this.startedAt === null) return 0;
     return (this.endedAt ?? this.now()) - this.startedAt;
@@ -52,10 +65,47 @@ export class Store {
   }
 
   dispatch(action: GameAction): void {
-    if (this.frozen) return;
+    if (this.frozen || this.pending) return;
+    if (action.type === "reveal" && this.state.status === "ready" && this.state.board === null) {
+      this.requestGeneration(action.index);
+      return;
+    }
+    this.apply(action);
+  }
+
+  private requestGeneration(firstIndex: number): void {
+    this.pending = true;
+    this.error = null;
+    this.emit();
+    const request: GenerateRequest = {
+      config: this.state.config,
+      seed: this.state.seed,
+      firstIndex,
+    };
+    this.solver.generate(request).then((result) => {
+      this.pending = false;
+      if (result.ok) {
+        let next = reduce(this.state, {
+          type: "start",
+          board: result.board,
+          firstIndex,
+          seed: result.boardKey.seed,
+        });
+        this.startedAt = this.now();
+        next = reduce(next, { type: "reveal", index: firstIndex });
+        this.state = next;
+      } else {
+        this.error = result.reason;
+      }
+      this.emit();
+    });
+  }
+
+  private apply(action: GameAction): void {
     if (action.type === "restart") {
       this.startedAt = null;
       this.endedAt = null;
+      this.error = null;
     }
     const previous = this.state;
     const next = reduce(previous, action);
