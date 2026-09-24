@@ -3,6 +3,17 @@ import { nextAid } from "../core/aid.ts";
 import type { GenerateFailure, GenerateRequest } from "../core/generator.ts";
 import { isPlayable, isTimerRunning, newGame, reduce } from "../core/rules.ts";
 import { deserializeGame, type SavedGame } from "../core/save.ts";
+import {
+  canRequestHelp as canHelp,
+  independentAction,
+  initialTraining,
+  mistake,
+  nextAidLevel,
+  onGameWon,
+  requestHelp,
+  setGamesWon as withGamesWon,
+  type TrainingState,
+} from "../core/training.ts";
 import type { BoardConfig, GameAction, GameMode, GameState } from "../core/types.ts";
 import { inlineSolver, type Solver } from "../worker/solverClient.ts";
 
@@ -11,7 +22,7 @@ export type Mode = GameMode;
 export type ElapsedSource = () => number;
 
 const REVIVE_FREEZE_MS = 700;
-const LEADER_INTERVAL_MS = 450;
+const LEADER_INTERVAL_MS = 300;
 
 export type AidKind = "hint" | "smart" | "leader";
 
@@ -33,6 +44,8 @@ export class Store {
   private aid: AidState | null = null;
   private leaderTimer: number | null = null;
   private aidUsage = { hint: 0, smart: 0, leader: 0 };
+  private training: TrainingState = initialTraining();
+  private lastActionAt = 0;
 
   constructor(
     config: BoardConfig,
@@ -42,6 +55,7 @@ export class Store {
     private now: ElapsedSource = () => Date.now(),
   ) {
     this.state = newGame(config, seed, mode);
+    this.lastActionAt = this.now();
   }
 
   static fromSaved(
@@ -84,6 +98,35 @@ export class Store {
     return this.aid;
   }
 
+  getTraining(): TrainingState {
+    return this.training;
+  }
+
+  setGamesWon(gamesWon: number): void {
+    this.training = withGamesWon(this.training, gamesWon);
+  }
+
+  isHelpBlocked(): boolean {
+    return !canHelp(this.training);
+  }
+
+  nudgeIdleMs(): number {
+    return this.now() - this.lastActionAt;
+  }
+
+  requestHelp(): void {
+    if (this.mode !== "training") return;
+    if (!canHelp(this.training)) return;
+    const level = nextAidLevel(this.training);
+    this.training = requestHelp(this.training);
+    if (level === "hint") this.aidUsage.hint++;
+    else if (level === "smart") this.aidUsage.smart++;
+    else this.aidUsage.leader++;
+    if (level === "leader") this.startLeader();
+    else this.computeAid(level);
+    this.emit();
+  }
+
   getAidUsage(): { hint: number; smart: number; leader: number; revives: number } {
     return { ...this.aidUsage, revives: this.state.revives };
   }
@@ -101,7 +144,6 @@ export class Store {
   startLeader(): void {
     this.stopLeader();
     if (!this.state.board || !isPlayable(this.state)) return;
-    this.aidUsage.leader++;
     this.leaderTick();
   }
 
@@ -191,13 +233,26 @@ export class Store {
       this.accumulated = 0;
       this.runningSince = null;
       this.error = null;
+      this.training = initialTraining(this.training.gamesWon);
+      this.lastActionAt = this.now();
       this.stopLeader();
     }
     if (action.type === "reveal" && this.state.status === "ready" && this.state.board === null) {
       this.requestGeneration(action.index);
       return;
     }
+    const previous = this.state;
+    const isPlayerAction =
+      action.type === "reveal" || action.type === "toggleFlag" || action.type === "chord";
     this.commit(action);
+    if (isPlayerAction) {
+      this.lastActionAt = this.now();
+      if (this.state !== previous) {
+        if (this.state.revives > previous.revives) this.training = mistake(this.training);
+        else if (isPlayable(this.state)) this.training = independentAction(this.training);
+        this.emit();
+      }
+    }
   }
 
   private requestGeneration(firstIndex: number): void {
@@ -220,6 +275,9 @@ export class Store {
         });
         this.syncTimer(this.state, started);
         this.commit({ type: "reveal", index: firstIndex }, started);
+        this.training = independentAction(this.training);
+        this.lastActionAt = this.now();
+        this.emit();
       } else {
         this.error = result.reason;
         this.emit();
@@ -233,6 +291,9 @@ export class Store {
     if (next === previous) return;
     this.syncTimer(previous, next);
     this.state = next;
+    if (next.status === "won" && previous.status !== "won") {
+      this.training = onGameWon(this.training);
+    }
     if (next.revives > previous.revives) {
       this.beginFreeze();
       return;

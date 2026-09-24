@@ -13,6 +13,7 @@ export async function snapshot(page: Page) {
 }
 
 export async function waitForPlaying(page: Page): Promise<void> {
+  await page.waitForFunction(() => Boolean(window.__ms));
   await expect
     .poll(async () => (await snapshot(page)).state.status, { timeout: 15_000 })
     .toBe("playing");

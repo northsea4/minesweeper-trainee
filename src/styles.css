@@ -334,6 +334,21 @@ body {
   cursor: not-allowed;
 }
 
+.aids__button--nudge {
+  animation: nudge 1s ease-in-out infinite;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+@keyframes nudge {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
 .pending {
   font-size: 14px;
   color: var(--muted);

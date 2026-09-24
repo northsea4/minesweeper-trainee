@@ -7,6 +7,7 @@ export interface Settings {
   sound: boolean;
   haptics: boolean;
   numberDots: boolean;
+  nudgeEnabled: boolean;
 }
 
 const STORAGE_KEY = "minesweeper-trainee.settings";
@@ -17,6 +18,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: true,
   haptics: true,
   numberDots: true,
+  nudgeEnabled: true,
 };
 
 type Listener = () => void;
@@ -39,6 +41,7 @@ function coerce(stored: Partial<Settings> | null): Settings {
     sound: stored?.sound === false ? false : DEFAULT_SETTINGS.sound,
     haptics: stored?.haptics === false ? false : DEFAULT_SETTINGS.haptics,
     numberDots: stored?.numberDots === false ? false : DEFAULT_SETTINGS.numberDots,
+    nudgeEnabled: stored?.nudgeEnabled === false ? false : DEFAULT_SETTINGS.nudgeEnabled,
   };
 }
 

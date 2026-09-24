@@ -13,6 +13,7 @@ import {
 } from "../core/records.ts";
 import { presetToConfig, type CustomPreset } from "../core/customPresets.ts";
 import { isResumable, serializeGame } from "../core/save.ts";
+import { shouldNudge } from "../core/training.ts";
 import {
   applyImport,
   buildBundle,
@@ -136,6 +137,7 @@ export function App({
   const [presetForm, setPresetForm] = useState({ name: "", width: 9, height: 9, mines: 10 });
   const [importMode, setImportMode] = useState<ImportMode>("merge");
   const [dataMessage, setDataMessage] = useState("");
+  const [nudging, setNudging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -147,6 +149,11 @@ export function App({
   }, [solver, sensory]);
 
   useEffect(() => applyTheme(settings), []);
+
+  const gamesWon = history.list().filter((record) => record.outcome === "won").length;
+  useEffect(() => {
+    store.setGamesWon(gamesWon);
+  }, [gamesWon, store]);
 
   const view = useMemo(
     () =>
@@ -230,7 +237,14 @@ export function App({
     });
     const timer = window.setInterval(() => {
       if (isPlayable(store.getState())) forceRender((n) => n + 1);
-    }, 250);
+      setNudging(
+        shouldNudge(store.getTraining(), {
+          mode: store.getMode(),
+          nudgeEnabled: settings.get().nudgeEnabled,
+          idleMs: store.nudgeIdleMs(),
+        }),
+      );
+    }, 500);
     window.__ms = {
       getState: () => store.getState(),
       dispatch: (action) => store.dispatch(action),
@@ -364,31 +378,23 @@ export function App({
         <div class="aids" data-testid="aids">
           <button
             type="button"
-            class="aids__button"
-            data-testid="hint"
-            disabled={state.status !== "playing"}
-            onClick={() => store.requestHint()}
+            class={`aids__button${nudging ? " aids__button--nudge" : ""}`}
+            data-testid="help"
+            disabled={state.status !== "playing" || store.isHelpBlocked()}
+            onClick={() => store.requestHelp()}
           >
-            帮帮我（提示）
+            帮帮我
           </button>
-          <button
-            type="button"
-            class="aids__button"
-            data-testid="smart"
-            disabled={state.status !== "playing"}
-            onClick={() => store.requestSmartHint()}
-          >
-            解释原因
-          </button>
-          <button
-            type="button"
-            class="aids__button"
-            data-testid="leader"
-            disabled={state.status !== "playing"}
-            onClick={() => (aid?.kind === "leader" ? store.stopLeader() : store.startLeader())}
-          >
-            {aid?.kind === "leader" ? "停止领航" : "领航演示"}
-          </button>
+          {aid?.kind === "leader" && (
+            <button
+              type="button"
+              class="aids__button"
+              data-testid="stop-leader"
+              onClick={() => store.stopLeader()}
+            >
+              停止领航
+            </button>
+          )}
         </div>
       )}
 
@@ -623,6 +629,15 @@ export function App({
               data-testid="dots"
               checked={numberDots}
               onChange={(event) => settings.set({ numberDots: event.currentTarget.checked })}
+            />
+          </label>
+          <label class="settings__row">
+            <span>轻推求助</span>
+            <input
+              type="checkbox"
+              data-testid="nudge"
+              checked={settings.get().nudgeEnabled}
+              onChange={(event) => settings.set({ nudgeEnabled: event.currentTarget.checked })}
             />
           </label>
         </div>
