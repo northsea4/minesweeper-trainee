@@ -40,6 +40,7 @@ export class Store {
   private frozen = false;
   private freezeTimer: number | null = null;
   private pending = false;
+  private pendingSince = 0;
   private error: GenerateFailure | null = null;
   private aid: AidState | null = null;
   private leaderTimer: number | null = null;
@@ -95,6 +96,10 @@ export class Store {
 
   isPending(): boolean {
     return this.pending;
+  }
+
+  pendingElapsedMs(): number {
+    return this.pending ? this.now() - this.pendingSince : 0;
   }
 
   getError(): GenerateFailure | null {
@@ -263,6 +268,7 @@ export class Store {
   private requestGeneration(firstIndex: number): void {
     const token = ++this.generationToken;
     this.pending = true;
+    this.pendingSince = this.now();
     this.error = null;
     this.emit();
     const request: GenerateRequest = {

@@ -69,10 +69,10 @@ export const DEFAULT_BUDGET: GenerateBudget = {
 };
 
 const LARGE_BUDGET: GenerateBudget = {
-  maxCandidates: 1000,
-  maxRepairsPerCandidate: 30,
-  deadlineMs: 8000,
-  maxSteps: 20000,
+  maxCandidates: 3000,
+  maxRepairsPerCandidate: 60,
+  deadlineMs: 15000,
+  maxSteps: 40000,
 };
 
 /** Larger boards need more candidates to certify; budget scales with area. */
@@ -161,8 +161,7 @@ export function generateNoGuess(
       }
       if (attempt >= budget.maxRepairsPerCandidate) break;
       if (Date.now() > deadline) return { ok: false, reason: "budget-exhausted" };
-      const repaired = perturb(board, protectedSet, result.frontier, rng);
-      if (!repaired) break;
+      const repaired = perturb(board, protectedSet, result.frontier, rng);      if (!repaired) break;
       board = repaired;
       repairs++;
     }
@@ -180,9 +179,20 @@ function perturb(
   if (frontier.length === 0) return null;
   const targets = frontier.filter((index) => !protectedSet.has(index) && !board.cells[index].mine);
   if (targets.length === 0) return null;
-  const donors: number[] = [];
-  for (let index = 0; index < board.cells.length; index++) {
-    if (board.cells[index].mine && !protectedSet.has(index)) donors.push(index);
+
+  const config: BoardConfig = { width: board.width, height: board.height, mines: board.mines };
+  const near = new Set<number>();
+  for (const cell of frontier) {
+    for (const neighbour of neighborsOf(cell, config)) {
+      if (board.cells[neighbour].mine && !protectedSet.has(neighbour)) near.add(neighbour);
+    }
+  }
+  let donors = [...near];
+  if (donors.length === 0) {
+    donors = [];
+    for (let index = 0; index < board.cells.length; index++) {
+      if (board.cells[index].mine && !protectedSet.has(index)) donors.push(index);
+    }
   }
   if (donors.length === 0) return null;
 

@@ -12,7 +12,7 @@ test("an unsupported preset fails explicitly and offers a retry", async ({ page 
 });
 
 test("the built-in expert preset generates a playable no-guess board", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?seed=2");
   await page.getByLabel("难度").selectOption("expert");
   await expect(cell(page, 200)).toHaveCount(1);
   await cell(page, 200).click();

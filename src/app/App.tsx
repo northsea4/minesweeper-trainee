@@ -230,7 +230,7 @@ export function App({
       forceRender((n) => n + 1);
     });
     const timer = window.setInterval(() => {
-      if (isPlayable(store.getState())) forceRender((n) => n + 1);
+      if (isPlayable(store.getState()) || store.isPending()) forceRender((n) => n + 1);
       setNudging(
         shouldNudge(store.getTraining(), {
           mode: store.getMode(),
@@ -385,7 +385,8 @@ export function App({
       </div>
       {pending && (
         <div class="pending" data-testid="pending">
-          正在生成无猜棋盘…（较大棋盘可能需要几秒）
+          正在生成无猜棋盘…（较大棋盘可能需要几秒，已用{" "}
+          {Math.floor(store.pendingElapsedMs() / 1000)}s）
         </div>
       )}
 
