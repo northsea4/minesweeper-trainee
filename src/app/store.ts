@@ -2,6 +2,7 @@ import type { Deduction } from "../core/analyze.ts";
 import { nextAid } from "../core/aid.ts";
 import type { GenerateFailure, GenerateRequest } from "../core/generator.ts";
 import { isPlayable, isTimerRunning, newGame, reduce } from "../core/rules.ts";
+import { deserializeGame, type SavedGame } from "../core/save.ts";
 import type { BoardConfig, GameAction, GameMode, GameState } from "../core/types.ts";
 import { inlineSolver, type Solver } from "../worker/solverClient.ts";
 
@@ -41,6 +42,18 @@ export class Store {
     private now: ElapsedSource = () => Date.now(),
   ) {
     this.state = newGame(config, seed, mode);
+  }
+
+  static fromSaved(
+    saved: SavedGame,
+    solver: Solver = inlineSolver,
+    now: ElapsedSource = () => Date.now(),
+  ): Store {
+    const store = new Store(saved.config, saved.seed, saved.mode, solver, now);
+    store.state = deserializeGame(saved);
+    store.accumulated = saved.elapsedMs;
+    if (isTimerRunning(store.state)) store.runningSince = now();
+    return store;
   }
 
   getState(): GameState {

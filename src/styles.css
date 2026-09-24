@@ -426,6 +426,45 @@ body {
   font-size: 14px;
 }
 
+.preset-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.preset-form input {
+  width: 84px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--cell);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.preset-form input:first-child {
+  width: 140px;
+}
+
+.preset-form button,
+.preset-data button,
+.history__item button,
+.preset-data select {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--cell);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.preset-data {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .settings {
   width: 100%;
   background: var(--panel);

@@ -11,9 +11,19 @@ import {
   recentFor,
   type GameRecord,
 } from "../core/records.ts";
+import { presetToConfig, type CustomPreset } from "../core/customPresets.ts";
+import { isResumable, serializeGame } from "../core/save.ts";
+import {
+  applyImport,
+  buildBundle,
+  parseBundle,
+  serializeBundle,
+  type ImportMode,
+} from "../core/transfer.ts";
 import { BoardView } from "../ui/boardView.ts";
 import { CONFLICT_TEXT, NO_AID_TEXT, presentAid } from "../ui/aidText.ts";
 import { HistoryStore } from "./history.ts";
+import { PersistenceStore } from "./persistence.ts";
 import { Sensory } from "./sensory.ts";
 import { settings, type RevealMode, type ThemeChoice } from "./settings.ts";
 import { Store, type AidState } from "./store.ts";
@@ -116,11 +126,17 @@ export function App({
   const solver = useRef(new WorkerSolver()).current;
   const sensory = useRef(new Sensory(settings)).current;
   const history = useRef(new HistoryStore()).current;
-  const [store] = useState(() => new Store(config, seed ?? randomSeed(), mode, solver));
+  const persistence = useRef(new PersistenceStore()).current;
+  const [store, setStore] = useState(() => new Store(config, seed ?? randomSeed(), mode, solver));
   const boardHost = useRef<HTMLDivElement>(null);
   const lastStatus = useRef(store.getState().status);
   const recorded = useRef(false);
+  const restored = useRef(false);
   const [, forceRender] = useState(0);
+  const [presetForm, setPresetForm] = useState({ name: "", width: 9, height: 9, mines: 10 });
+  const [importMode, setImportMode] = useState<ImportMode>("merge");
+  const [dataMessage, setDataMessage] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const disarm = sensory.armOnFirstGesture();
@@ -190,10 +206,24 @@ export function App({
       }
       applyAid(view, store);
       view.render(snapshot);
+      const current = store.getState();
+      if (current.board && (current.status === "playing" || current.status === "paused")) {
+        void persistence.setSave(serializeGame(current, store.getElapsedMs(), Date.now()));
+      } else if (current.status !== "ready") {
+        void persistence.setSave(null);
+      }
       forceRender((n) => n + 1);
     });
     const unsubscribeHistory = history.subscribe(() => forceRender((n) => n + 1));
     void history.whenReady().then(() => forceRender((n) => n + 1));
+    const unsubscribePersistence = persistence.subscribe(() => forceRender((n) => n + 1));
+    if (!restored.current) {
+      restored.current = true;
+      void persistence.whenReady().then(() => {
+        const saved = persistence.getSave();
+        if (isResumable(saved)) setStore(Store.fromSaved(saved!, solver));
+      });
+    }
     const unsubscribeSettings = settings.subscribe(() => {
       view.render(store.getState());
       forceRender((n) => n + 1);
@@ -222,6 +252,7 @@ export function App({
       unsubscribe();
       unsubscribeSettings();
       unsubscribeHistory();
+      unsubscribePersistence();
       window.clearInterval(timer);
       store.dispose();
       view.destroy();
@@ -236,9 +267,56 @@ export function App({
   const paused = state.status === "paused";
   const canPause = state.status === "playing" || state.status === "paused";
   const canGiveUp = state.status === "playing" || state.status === "paused";
+
+  const startNewGame = (nextConfig: BoardConfig, nextMode: GameMode) => {
+    void persistence.setSave(null);
+    onNewGame(nextConfig, nextMode);
+  };
+
+  const savePreset = async () => {
+    const created = await persistence.addPreset(presetForm);
+    if (!created) {
+      setDataMessage("预设不合法：宽高 ≥ 3、1 ≤ 雷数 ≤ 面积 − 9、面积 ≤ 10000");
+      return;
+    }
+    setPresetForm({ ...presetForm, name: "" });
+    setDataMessage(`已保存预设「${created.name}」`);
+  };
+
+  const exportData = (presetsOnly: boolean) => {
+    const bundle = buildBundle({
+      presets: persistence.listPresets(),
+      records: history.list(),
+      save: persistence.getSave(),
+      presetsOnly,
+      now: Date.now(),
+    });
+    download(`minesweeper-${presetsOnly ? "presets" : "data"}.json`, serializeBundle(bundle));
+    setDataMessage("已导出");
+  };
+
+  const importData = async (file: File) => {
+    const parsed = parseBundle(await file.text());
+    if (!parsed.ok) {
+      setDataMessage(`导入失败：${parsed.reason}`);
+      return;
+    }
+    const local = buildBundle({
+      presets: persistence.listPresets(),
+      records: history.list(),
+      save: persistence.getSave(),
+      now: Date.now(),
+    });
+    const result = applyImport(local, parsed.bundle, importMode);
+    await persistence.setPresets(result.presets);
+    await history.setRecords(result.records);
+    if (importMode === "replace") await persistence.setSave(result.save);
+    setDataMessage(importMode === "merge" ? "已合并导入" : "已替换导入");
+  };
   const records = history.list();
   const best = personalBest(records, config);
   const recent = recentFor(records, config, 20);
+  const presets = persistence.listPresets();
 
   return (
     <main class="app">
@@ -263,7 +341,7 @@ export function App({
       {error && (
         <div class="banner banner--error" data-testid="error" role="alert">
           <span>{ERROR_TEXT[error]}</span>
-          <button type="button" onClick={() => onNewGame(config, mode)}>
+          <button type="button" onClick={() => startNewGame(config, mode)}>
             重试
           </button>
         </div>
@@ -321,7 +399,7 @@ export function App({
           value={presetIdOf(config)}
           onChange={(event) => {
             const next = PRESETS_MAP[event.currentTarget.value];
-            if (next) onNewGame(next, mode);
+            if (next) startNewGame(next, mode);
           }}
         >
           {PRESET_OPTIONS.map((preset) => (
@@ -335,7 +413,7 @@ export function App({
           aria-label="模式"
           data-testid="mode"
           value={mode}
-          onChange={(event) => onNewGame(config, event.currentTarget.value as GameMode)}
+          onChange={(event) => startNewGame(config, event.currentTarget.value as GameMode)}
         >
           <option value="training">训练</option>
           <option value="challenge">计时挑战</option>
@@ -368,10 +446,116 @@ export function App({
         >
           放弃
         </button>
-        <button type="button" class="controls__new" onClick={() => onNewGame(config, mode)}>
+        <button type="button" class="controls__new" onClick={() => startNewGame(config, mode)}>
           新游戏
         </button>
       </div>
+
+      <details class="history" data-testid="presets">
+        <summary>预设与数据</summary>
+        <div class="history__body">
+          <ul class="history__list">
+            {presets.length === 0 && <li class="history__empty">还没有自定义预设</li>}
+            {presets.map((preset: CustomPreset) => (
+              <li class="history__item" data-testid="preset-item" key={preset.id}>
+                <span>{preset.name}</span>
+                <span>
+                  {preset.width}×{preset.height} · {preset.mines} 雷
+                </span>
+                <button type="button" onClick={() => startNewGame(presetToConfig(preset), mode)}>
+                  使用
+                </button>
+                <button type="button" onClick={() => void persistence.deletePreset(preset.id)}>
+                  删除
+                </button>
+              </li>
+            ))}
+          </ul>
+          <form
+            class="preset-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void savePreset();
+            }}
+          >
+            <input
+              aria-label="预设名称"
+              placeholder="名称"
+              value={presetForm.name}
+              onInput={(event) =>
+                setPresetForm({ ...presetForm, name: event.currentTarget.value })
+              }
+            />
+            <input
+              type="number"
+              aria-label="宽度"
+              min={3}
+              value={presetForm.width}
+              onInput={(event) =>
+                setPresetForm({ ...presetForm, width: Number(event.currentTarget.value) })
+              }
+            />
+            <input
+              type="number"
+              aria-label="高度"
+              min={3}
+              value={presetForm.height}
+              onInput={(event) =>
+                setPresetForm({ ...presetForm, height: Number(event.currentTarget.value) })
+              }
+            />
+            <input
+              type="number"
+              aria-label="雷数"
+              min={1}
+              value={presetForm.mines}
+              onInput={(event) =>
+                setPresetForm({ ...presetForm, mines: Number(event.currentTarget.value) })
+              }
+            />
+            <button type="submit" data-testid="save-preset">
+              保存预设
+            </button>
+          </form>
+          <div class="preset-data">
+            <button type="button" data-testid="export-all" onClick={() => exportData(false)}>
+              导出全部
+            </button>
+            <button type="button" data-testid="export-presets" onClick={() => exportData(true)}>
+              仅导出预设
+            </button>
+            <select
+              aria-label="导入方式"
+              data-testid="import-mode"
+              value={importMode}
+              onChange={(event) => setImportMode(event.currentTarget.value as ImportMode)}
+            >
+              <option value="merge">合并</option>
+              <option value="replace">替换</option>
+            </select>
+            <button type="button" onClick={() => fileInput.current?.click()}>
+              导入
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept="application/json"
+              data-testid="import-file"
+              hidden
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                if (file) void importData(file);
+                event.currentTarget.value = "";
+              }}
+            />
+          </div>
+          {dataMessage && (
+            <p class="history__empty" data-testid="data-message">
+              {dataMessage}
+            </p>
+          )}
+        </div>
+      </details>
 
       <details class="history" data-testid="history">
         <summary>历史与排行</summary>
@@ -470,6 +654,16 @@ function aidMessage(aid: AidState | null): string {
     return aid.conflict ? `${text} ${CONFLICT_TEXT}` : text;
   }
   return aid.conflict ? CONFLICT_TEXT : NO_AID_TEXT;
+}
+
+function download(name: string, text: string): void {
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 function outcomeLabel(record: GameRecord): string {

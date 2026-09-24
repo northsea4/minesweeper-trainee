@@ -1,17 +1,15 @@
 import type { GameRecord } from "../core/records.ts";
+import { openDb, RECORDS_STORE, requestDone, transactionDone } from "./db.ts";
 
-const DB_NAME = "minesweeper-trainee";
-const STORE = "records";
 const LS_KEY = "minesweeper-trainee.records";
 
 export class HistoryStore {
   private records: GameRecord[] = [];
   private listeners = new Set<() => void>();
-  private db: IDBDatabase | null = null;
   private ready: Promise<void>;
 
   constructor() {
-    this.ready = this.open();
+    this.ready = this.load();
   }
 
   whenReady(): Promise<void> {
@@ -25,7 +23,31 @@ export class HistoryStore {
   async add(record: GameRecord): Promise<void> {
     await this.ready;
     this.records.push(record);
-    this.persist(record);
+    await this.persist(record);
+    this.emit();
+  }
+
+  async setRecords(records: GameRecord[]): Promise<void> {
+    await this.ready;
+    this.records = records;
+    const db = await openDb();
+    if (db) {
+      try {
+        const tx = db.transaction(RECORDS_STORE, "readwrite");
+        const store = tx.objectStore(RECORDS_STORE);
+        store.clear();
+        for (const record of records) store.put(record);
+        await transactionDone(tx);
+      } catch {
+        void 0;
+      }
+    } else if (typeof localStorage !== "undefined") {
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify(records));
+      } catch {
+        void 0;
+      }
+    }
     this.emit();
   }
 
@@ -34,56 +56,30 @@ export class HistoryStore {
     return () => this.listeners.delete(listener);
   }
 
-  private open(): Promise<void> {
-    return new Promise((resolve) => {
-      if (typeof indexedDB === "undefined") {
-        this.loadFallback();
-        resolve();
-        return;
-      }
-      let request: IDBOpenDBRequest;
-      try {
-        request = indexedDB.open(DB_NAME, 1);
-      } catch {
-        this.loadFallback();
-        resolve();
-        return;
-      }
-      request.onupgradeneeded = () => {
-        const db = request.result;
-        if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
-      };
-      request.onsuccess = () => {
-        this.db = request.result;
-        try {
-          const tx = this.db.transaction(STORE, "readonly");
-          const getAll = tx.objectStore(STORE).getAll();
-          getAll.onsuccess = () => {
-            this.records = (getAll.result as GameRecord[]).sort((a, b) => a.timestamp - b.timestamp);
-            this.emit();
-            resolve();
-          };
-          getAll.onerror = () => {
-            this.loadFallback();
-            resolve();
-          };
-        } catch {
-          this.loadFallback();
-          resolve();
-        }
-      };
-      request.onerror = () => {
-        this.loadFallback();
-        resolve();
-      };
-    });
+  private async load(): Promise<void> {
+    const db = await openDb();
+    if (!db) {
+      this.loadFallback();
+      return;
+    }
+    try {
+      const tx = db.transaction(RECORDS_STORE, "readonly");
+      const getAll = tx.objectStore(RECORDS_STORE).getAll();
+      await requestDone(getAll);
+      this.records = (getAll.result as GameRecord[]).sort((a, b) => a.timestamp - b.timestamp);
+      this.emit();
+    } catch {
+      this.loadFallback();
+    }
   }
 
-  private persist(record: GameRecord): void {
-    if (this.db) {
+  private async persist(record: GameRecord): Promise<void> {
+    const db = await openDb();
+    if (db) {
       try {
-        const tx = this.db.transaction(STORE, "readwrite");
-        tx.objectStore(STORE).put(record);
+        const tx = db.transaction(RECORDS_STORE, "readwrite");
+        tx.objectStore(RECORDS_STORE).put(record);
+        await transactionDone(tx);
         return;
       } catch {
         void 0;
