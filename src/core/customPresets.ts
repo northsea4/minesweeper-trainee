@@ -1,6 +1,8 @@
 import type { BoardConfig } from "./types.ts";
 
 export const MAX_AREA = 10_000;
+/** Measured reliably-no-guess density cap (see docs/perf/baseline.md). */
+export const MAX_DENSITY = 0.38;
 
 export interface CustomPreset {
   id: string;
@@ -13,7 +15,7 @@ export interface CustomPreset {
 
 export type PresetValidation =
   | { ok: true; preset: CustomPreset }
-  | { ok: false; reason: "dimensions" | "mines" | "area" | "name" };
+  | { ok: false; reason: "dimensions" | "mines" | "area" | "density" | "name" };
 
 export function validateCustomPreset(
   input: {
@@ -36,6 +38,9 @@ export function validateCustomPreset(
   if (width * height > MAX_AREA) return { ok: false, reason: "area" };
   if (!Number.isInteger(mines) || mines < 1 || mines > width * height - 9) {
     return { ok: false, reason: "mines" };
+  }
+  if (mines > width * height * MAX_DENSITY) {
+    return { ok: false, reason: "density" };
   }
   return {
     ok: true,

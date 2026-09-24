@@ -1,5 +1,6 @@
 import { emptyBoard, neighborsOf } from "./board.ts";
 import { certifyBoard, type Certificate } from "./certificate.ts";
+import { MAX_DENSITY } from "./customPresets.ts";
 import { makeRng, PRNG_VERSION } from "./rng.ts";
 import type { Board, BoardConfig, BoardKey } from "./types.ts";
 import { ALGORITHM_VERSION, POLICY_VERSION } from "./types.ts";
@@ -96,6 +97,7 @@ export function validatePreset(config: BoardConfig): boolean {
   }
   if (width < 3 || height < 3) return false;
   if (mines < 1 || mines > width * height - 9) return false;
+  if (mines > width * height * MAX_DENSITY) return false;
   return true;
 }
 
@@ -124,7 +126,7 @@ export function generateNoGuess(
 
     for (let attempt = 0; ; attempt++) {
       hooks.onProgress?.({ candidates: candidate, repairs });
-      const result = certifyBoard(board, firstIndex, budget.maxSteps);
+      const result = certifyBoard(board, firstIndex, budget.maxSteps, deadline);
       if (result.ok) {
         return {
           ok: true,

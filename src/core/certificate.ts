@@ -59,6 +59,7 @@ export function certifyBoard(
   board: Board,
   firstIndex: number,
   maxSteps = 5000,
+  deadline?: number,
 ): CertifyResult {
   const state = new PublicState(board);
   state.revealArea(firstIndex);
@@ -66,6 +67,9 @@ export function certifyBoard(
 
   while (state.revealedCount < board.cells.length - board.mines) {
     if (steps.length >= maxSteps) {
+      return { ok: false, reason: "step-limit", frontier: [] };
+    }
+    if (deadline !== undefined && Date.now() > deadline) {
       return { ok: false, reason: "step-limit", frontier: [] };
     }
     const result = analyze({
