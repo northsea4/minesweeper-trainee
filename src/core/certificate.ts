@@ -1,6 +1,6 @@
 import { analyze, type DeductionProof } from "./analyze.ts";
-import { neighborsOf } from "./board.ts";
-import { POLICY_VERSION, type Board, type BoardConfig } from "./types.ts";
+import { floodReveal } from "./reveal.ts";
+import { POLICY_VERSION, type Board } from "./types.ts";
 
 export interface CertificateStep {
   action: "reveal" | "mark-mine";
@@ -29,29 +29,16 @@ class PublicState {
   constructor(private board: Board) {}
 
   revealArea(start: number): number {
-    const config: BoardConfig = {
-      width: this.board.width,
-      height: this.board.height,
-      mines: this.board.mines,
-    };
-    const stack = [start];
-    let revealed = 0;
-    while (stack.length > 0) {
-      const index = stack.pop()!;
-      if (this.revealedNumbers.has(index)) continue;
-      if (this.board.cells[index].mine) continue;
+    const freshly = floodReveal(
+      this.board,
+      start,
+      (index) => this.revealedNumbers.has(index) || this.knownMines.has(index),
+    );
+    for (const index of freshly) {
       this.revealedNumbers.set(index, this.board.cells[index].adjacent);
-      revealed++;
-      if (this.board.cells[index].adjacent === 0) {
-        for (const neighbor of neighborsOf(index, config)) {
-          if (!this.revealedNumbers.has(neighbor) && !this.knownMines.has(neighbor)) {
-            stack.push(neighbor);
-          }
-        }
-      }
     }
-    this.revealedCount += revealed;
-    return revealed;
+    this.revealedCount += freshly.length;
+    return freshly.length;
   }
 }
 

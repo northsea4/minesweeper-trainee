@@ -10,12 +10,20 @@ registerSW({ immediate: true });
 if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
   const hadController = Boolean(navigator.serviceWorker.controller);
   let reloading = false;
+  const reloadWhenIdle = () => {
+    const status = window.__ms?.snapshot().state.status;
+    if (status === "playing" || status === "paused") {
+      window.setTimeout(reloadWhenIdle, 3000);
+      return;
+    }
+    window.location.reload();
+  };
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    // Only reload when an existing shell is replaced by a newer one; the first
-    // install must not interrupt the running page.
+    // Only reload when an existing shell is replaced by a newer one, and never
+    // interrupt a game in progress — wait until it is idle.
     if (!hadController || reloading) return;
     reloading = true;
-    window.location.reload();
+    reloadWhenIdle();
   });
 }
 

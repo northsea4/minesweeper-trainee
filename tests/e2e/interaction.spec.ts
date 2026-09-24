@@ -93,4 +93,33 @@ test("training mode revives after hitting a mine without losing the timer", asyn
   const settled = await snapshot(page);
   expect(settled.frozen).toBe(false);
   expect(settled.state.reviewIndex).toBeNull();
+  expect(settled.aidKind).toBe("smart");
+  await expect(page.getByTestId("hintbar")).toContainText("数字");
+});
+
+test("holding both mouse buttons chords", async ({ page }) => {
+  await page.goto("/?w=9&h=9&m=10&seed=7");
+  await cell(page, 40).click();
+  await waitForPlaying(page);
+  const before = await snapshot(page);
+  const board = before.state.board!;
+  const number = board.cells.findIndex((c, i) => {
+    if (c.mine || c.adjacent === 0 || before.state.marks[i] !== "revealed") return false;
+    return neighbors(i).some((n) => !board.cells[n].mine && before.state.marks[n] === "hidden");
+  });
+  for (const index of neighbors(number)) {
+    if (board.cells[index].mine) await cell(page, index).click({ button: "right" });
+  }
+  const { x, y } = await center(page, number);
+  await cell(page, number).dispatchEvent("pointerdown", {
+    pointerType: "mouse",
+    button: 0,
+    buttons: 3,
+    clientX: x,
+    clientY: y,
+    bubbles: true,
+    cancelable: true,
+  });
+  const after = await snapshot(page);
+  expect(after.state.revealedCount).toBeGreaterThan(before.state.revealedCount);
 });

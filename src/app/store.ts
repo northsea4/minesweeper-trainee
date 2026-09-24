@@ -46,6 +46,7 @@ export class Store {
   private aidUsage = { hint: 0, smart: 0, leader: 0 };
   private training: TrainingState = initialTraining();
   private lastActionAt = 0;
+  private generationToken = 0;
 
   constructor(
     config: BoardConfig,
@@ -65,7 +66,13 @@ export class Store {
   ): Store {
     const store = new Store(saved.config, saved.seed, saved.mode, solver, now);
     store.state = deserializeGame(saved);
-    store.accumulated = saved.elapsedMs;
+    store.lastActionAt = now();
+    const interrupted =
+      saved.mode === "challenge" &&
+      (saved.status === "playing" || saved.status === "paused") &&
+      saved.timestamp > 0;
+    store.accumulated =
+      saved.elapsedMs + (interrupted ? Math.max(0, now() - saved.timestamp) : 0);
     if (isTimerRunning(store.state)) store.runningSince = now();
     return store;
   }
@@ -129,16 +136,6 @@ export class Store {
 
   getAidUsage(): { hint: number; smart: number; leader: number; revives: number } {
     return { ...this.aidUsage, revives: this.state.revives };
-  }
-
-  requestHint(): void {
-    this.aidUsage.hint++;
-    this.computeAid("hint");
-  }
-
-  requestSmartHint(): void {
-    this.aidUsage.smart++;
-    this.computeAid("smart");
   }
 
   startLeader(): void {
@@ -224,7 +221,15 @@ export class Store {
   }
 
   dispatch(action: GameAction): void {
-    if (this.frozen || this.pending) return;
+    if (this.pending) {
+      if (action.type !== "restart") return;
+      this.solver.cancel();
+      this.generationToken++;
+      this.pending = false;
+      this.error = null;
+    } else if (this.frozen) {
+      return;
+    }
     if (this.aid?.kind === "leader") this.stopLeader();
     else if (this.aid !== null) {
       this.aid = null;
@@ -256,6 +261,7 @@ export class Store {
   }
 
   private requestGeneration(firstIndex: number): void {
+    const token = ++this.generationToken;
     this.pending = true;
     this.error = null;
     this.emit();
@@ -265,6 +271,7 @@ export class Store {
       firstIndex,
     };
     this.solver.generate(request).then((result) => {
+      if (token !== this.generationToken) return;
       this.pending = false;
       if (result.ok) {
         const started = reduce(this.state, {
@@ -309,6 +316,11 @@ export class Store {
       this.frozen = false;
       this.freezeTimer = null;
       this.state = reduce(this.state, { type: "clearReview" });
+      if (this.mode === "training" && isPlayable(this.state)) {
+        this.training = { ...this.training, showAid: "smart", blockedAid: true, unaidedStreak: 0 };
+        this.aidUsage.smart++;
+        this.computeAid("smart");
+      }
       this.emit();
     }, REVIVE_FREEZE_MS);
   }

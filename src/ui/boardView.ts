@@ -176,12 +176,18 @@ export class BoardView {
   private onPointerDown = (event: PointerEvent): void => {
     const cell = this.cellAt(event.target);
     if (this.options.isLocked()) return;
+    if (cell === null) return;
+    const index = Number(cell.dataset.index);
 
+    if (event.pointerType === "mouse" && event.buttons === 3) {
+      event.preventDefault();
+      this.callbacks.onChord(index);
+      return;
+    }
     if (event.pointerType === "mouse" && event.button === 2) {
       return;
     }
 
-    const index = cell ? Number(cell.dataset.index) : null;
     this.pointers.set(event.pointerId, {
       x: event.clientX,
       y: event.clientY,
@@ -195,8 +201,6 @@ export class BoardView {
         return;
       }
     }
-
-    if (index === null) return;
 
     if (event.pointerType === "mouse" && event.button === 1) {
       event.preventDefault();

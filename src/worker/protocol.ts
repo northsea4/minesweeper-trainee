@@ -12,13 +12,7 @@ export interface GenerateMessage {
   budget?: Partial<GenerateBudget>;
 }
 
-export interface CancelMessage {
-  id: number;
-  type: "cancel";
-  targetId: number;
-}
-
-export type SolverRequest = GenerateMessage | CancelMessage;
+export type SolverRequest = GenerateMessage;
 
 export type SolverResponse =
   | {

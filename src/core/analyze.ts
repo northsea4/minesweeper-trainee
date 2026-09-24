@@ -1,5 +1,5 @@
 import { neighborsOf } from "./board.ts";
-import { POLICY_VERSION, type Board, type BoardConfig } from "./types.ts";
+import { POLICY_VERSION, type BoardConfig } from "./types.ts";
 
 export { POLICY_VERSION } from "./types.ts";
 
@@ -58,10 +58,6 @@ const TECHNIQUE_ORDER: Technique[] = [
   "global-count",
   "model-contradiction",
 ];
-
-export function isTechnique(value: string): value is Technique {
-  return (TECHNIQUE_ORDER as string[]).includes(value);
-}
 
 export function analyze(input: AnalyzeInput): AnalyzeResult {
   const { width, height, mines, revealedNumbers, knownMines } = input;
@@ -252,9 +248,4 @@ function withConclusion(
 
 function techniqueRank(technique: Technique): number {
   return TECHNIQUE_ORDER.indexOf(technique);
-}
-
-/** Looks at the true board only to report the clue value at a revealed cell. */
-export function clueAt(board: Board, index: number): number {
-  return board.cells[index].adjacent;
 }

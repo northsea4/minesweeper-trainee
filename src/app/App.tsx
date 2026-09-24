@@ -71,13 +71,6 @@ function randomSeed(): number {
   return (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
 }
 
-function formatTime(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
 const ERROR_TEXT: Record<GenerateFailure, string> = {
   "invalid-preset": "预设不合法，请调整后重试。",
   "budget-exhausted": "这个预设暂时无法生成无猜棋盘，请重试。",
@@ -330,8 +323,15 @@ export function App({
   };
   const records = history.list();
   const best = personalBest(records, config);
-  const recent = recentFor(records, config, 20);
+  const recent = recentFor(records, config, 200);
   const presets = persistence.listPresets();
+  const presetBests = [
+    ...PRESETS.map((preset) => ({
+      name: preset.name,
+      config: { width: preset.width, height: preset.height, mines: preset.mines },
+    })),
+    ...presets.map((preset) => ({ name: preset.name, config: presetToConfig(preset) })),
+  ].map((entry) => ({ name: entry.name, pb: personalBest(records, entry.config) }));
   const storageDegraded = persistence.isDegraded() || history.isDegraded();
 
   return (
@@ -343,7 +343,7 @@ export function App({
         </div>
         <div class="statusbar__item" data-testid="timer">
           <span class="statusbar__label">用时</span>
-          <span class="statusbar__value">{formatTime(store.getElapsedMs())}</span>
+          <span class="statusbar__value">{fmtDuration(store.getElapsedMs())}</span>
         </div>
         <div class="statusbar__item" data-testid="status">
           <span class="statusbar__value">{statusText(state, pending)}</span>
@@ -580,6 +580,16 @@ export function App({
           <div class="history__pb" data-testid="pb">
             个人最佳：{best ? fmtDuration(best.durationMs) : "—"}
           </div>
+          <ul class="history__list" data-testid="preset-bests">
+            {presetBests.map((entry) => (
+              <li class="history__item" key={entry.name}>
+                <span>{entry.name}</span>
+                <span class="history__badge">
+                  {entry.pb ? fmtDuration(entry.pb.durationMs) : "—"}
+                </span>
+              </li>
+            ))}
+          </ul>
           <ul class="history__list">
             {recent.length === 0 && <li class="history__empty">还没有对局记录</li>}
             {recent.map((r) => (

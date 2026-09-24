@@ -5,6 +5,7 @@ import type { SolverRequest, SolverResponse } from "./protocol.ts";
 
 export interface Solver {
   generate(request: GenerateRequest): Promise<GenerateResult>;
+  cancel(): void;
   dispose(): void;
 }
 
@@ -40,9 +41,24 @@ export class WorkerSolver implements Solver {
     });
   }
 
+  cancel(): void {
+    const worker = this.worker;
+    if (!worker) return;
+    worker.terminate();
+    this.settlePending("cancelled");
+    const next = createWorker();
+    this.worker = next;
+    if (next) this.attach(next);
+  }
+
   dispose(): void {
     this.worker?.terminate();
     this.worker = null;
+    this.settlePending("cancelled");
+  }
+
+  private settlePending(reason: "cancelled"): void {
+    for (const [, entry] of this.pending) entry.resolve({ ok: false, reason });
     this.pending.clear();
   }
 
@@ -84,5 +100,6 @@ function createWorker(): Worker | null {
 /** Runs generation synchronously — used where workers are unavailable (tests, SSR). */
 export const inlineSolver: Solver = {
   generate: (request) => Promise.resolve(generateNoGuess(request)),
+  cancel: () => void 0,
   dispose: () => void 0,
 };

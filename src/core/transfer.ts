@@ -100,7 +100,31 @@ export function parseBundle(json: string): ParseResult {
     for (const entry of candidate.records) {
       if (typeof entry !== "object" || entry === null) return { ok: false, reason: "记录项无效" };
       const item = entry as Partial<GameRecord>;
-      if (typeof item.id !== "string" || typeof item.durationMs !== "number") {
+      const preset = item.preset as GameRecord["preset"] | undefined;
+      const aids = item.aids as GameRecord["aids"] | undefined;
+      const validPreset =
+        typeof preset === "object" &&
+        preset !== null &&
+        typeof preset.width === "number" &&
+        typeof preset.height === "number" &&
+        typeof preset.mines === "number";
+      const validAids =
+        typeof aids === "object" &&
+        aids !== null &&
+        typeof aids.hint === "number" &&
+        typeof aids.smart === "number" &&
+        typeof aids.leader === "number" &&
+        typeof aids.revives === "number";
+      if (
+        typeof item.id !== "string" ||
+        typeof item.durationMs !== "number" ||
+        typeof item.timestamp !== "number" ||
+        typeof item.valid !== "boolean" ||
+        (item.mode !== "training" && item.mode !== "challenge") ||
+        (item.outcome !== "won" && item.outcome !== "lost" && item.outcome !== "abandoned") ||
+        !validPreset ||
+        !validAids
+      ) {
         return { ok: false, reason: "记录项字段缺失" };
       }
       records.push(item as GameRecord);

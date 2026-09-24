@@ -28,9 +28,9 @@ test("a full training game can be won with aids and revives", async ({ page }) =
   await cell(page, mine).click();
   await expect.poll(async () => (await snapshot(page)).reviveCount).toBe(1);
   await page.waitForTimeout(800);
-
-  await page.getByTestId("help").click();
-  await expect(page.getByTestId("hintbar")).not.toBeEmpty();
+  // The revive proactively explains itself with a smart hint.
+  await expect(page.getByTestId("hintbar")).toContainText("数字");
+  expect((await snapshot(page)).aidKind).toBe("smart");
 
   await solveViaDebug(page);
   await expect.poll(async () => (await snapshot(page)).state.status).toBe("won");

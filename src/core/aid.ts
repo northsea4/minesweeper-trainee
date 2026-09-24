@@ -1,5 +1,5 @@
 import { analyze, type Deduction } from "./analyze.ts";
-import { neighborsOf } from "./board.ts";
+import { floodReveal } from "./reveal.ts";
 import type { Board } from "./types.ts";
 
 export interface AidResult {
@@ -66,22 +66,8 @@ export function nextAid(
   return { step, conflict, solved: revealed.size >= totalSafe };
 }
 
-function revealArea(
-  board: Board,
-  revealed: Map<number, number>,
-  start: number,
-): void {
-  const config = { width: board.width, height: board.height, mines: board.mines };
-  const stack = [start];
-  while (stack.length > 0) {
-    const index = stack.pop()!;
-    if (revealed.has(index)) continue;
-    if (board.cells[index].mine) continue;
+function revealArea(board: Board, revealed: Map<number, number>, start: number): void {
+  for (const index of floodReveal(board, start, (cell) => revealed.has(cell))) {
     revealed.set(index, board.cells[index].adjacent);
-    if (board.cells[index].adjacent === 0) {
-      for (const neighbor of neighborsOf(index, config)) {
-        if (!revealed.has(neighbor)) stack.push(neighbor);
-      }
-    }
   }
 }

@@ -110,6 +110,14 @@ describe("import / export", () => {
     expect(parseBundle(JSON.stringify({})).ok).toBe(false);
   });
 
+  it("rejects records that are missing required fields", () => {
+    const malformed = JSON.stringify({
+      schemaVersion: 1,
+      records: [{ id: "r1", durationMs: 10 }],
+    });
+    expect(parseBundle(malformed)).toEqual({ ok: false, reason: "记录项字段缺失" });
+  });
+
   it("merges by de-duplicating ids and renaming colliding names", () => {
     const local = buildBundle({ presets: presetList });
     const incoming = buildBundle({

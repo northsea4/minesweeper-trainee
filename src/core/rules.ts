@@ -1,4 +1,5 @@
 import { neighborsOf } from "./board.ts";
+import { floodReveal } from "./reveal.ts";
 import { PRNG_VERSION } from "./rng.ts";
 import {
   ALGORITHM_VERSION,
@@ -79,27 +80,10 @@ export function remainingMines(state: GameState): number {
   return state.config.mines - state.flaggedCount;
 }
 
-function floodReveal(
-  board: Board,
-  marks: CellMark[],
-  start: number,
-  config: BoardConfig,
-): number {
-  const stack = [start];
-  let revealed = 0;
-  while (stack.length > 0) {
-    const index = stack.pop()!;
-    if (marks[index] !== "hidden") continue;
-    if (board.cells[index].mine) continue;
-    marks[index] = "revealed";
-    revealed++;
-    if (board.cells[index].adjacent === 0) {
-      for (const neighbor of neighborsOf(index, config)) {
-        if (marks[neighbor] === "hidden") stack.push(neighbor);
-      }
-    }
-  }
-  return revealed;
+function floodAndMark(board: Board, marks: CellMark[], start: number): number {
+  const freshly = floodReveal(board, start, (index) => marks[index] !== "hidden");
+  for (const index of freshly) marks[index] = "revealed";
+  return freshly.length;
 }
 
 function applyReveal(state: GameState, index: number): GameState {
@@ -114,7 +98,7 @@ function applyReveal(state: GameState, index: number): GameState {
     return { ...state, reviewIndex: index, revives: state.revives + 1 };
   }
   const marks = state.marks.slice();
-  const revealed = floodReveal(board, marks, index, state.config);
+  const revealed = floodAndMark(board, marks, index);
   const revealedCount = state.revealedCount + revealed;
   const won = revealedCount === state.marks.length - board.mines;
   const status: GameStatus = won ? "won" : "playing";

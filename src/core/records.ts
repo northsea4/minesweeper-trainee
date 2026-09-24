@@ -47,14 +47,6 @@ export function samePreset(a: BoardConfig, b: BoardConfig): boolean {
   return a.width === b.width && a.height === b.height && a.mines === b.mines;
 }
 
-export function presetKey(preset: BoardConfig): string {
-  return `${preset.width}x${preset.height}x${preset.mines}`;
-}
-
-export function isValidScore(record: GameRecord): boolean {
-  return record.valid;
-}
-
 export function personalBest(records: GameRecord[], preset: BoardConfig): GameRecord | null {
   let best: GameRecord | null = null;
   for (const record of records) {
